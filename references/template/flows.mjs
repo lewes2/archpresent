@@ -1,16 +1,19 @@
 /**
- * 【可选，强烈建议】典型场景流程。每一步是 "<图id>/<块id>"，序列可贯穿 L1→L4；
- * 播放时按当前所处层级投影 —— 在 L1 看是几个大块之间的往返，下钻到 L4 才看到每一行。
- * 每条流程 8~25 步为宜；from 写事实来源（文档路径或源文件），role 写「这是数据流还是控制流，看点是什么」。
+ * OPTIONAL but strongly recommended — Representative scenarios. Each step is "<diagramId>/<blockId>" and a
+ * sequence may run all the way from L1 to L4; during playback it is projected onto whatever level you
+ * are currently viewing — at L1 you see a few large blocks passing work back and forth, and only after
+ * drilling to L4 do you see each line. Aim for 8–25 steps per flow. `from` names the source of these
+ * facts (a doc path or a source file); `role` says whether this is a data flow or a control flow and
+ * what to watch for.
  */
 export const FLOWS = [
   {
-    name:'<场景名>',
-    from:'<事实来源>',
-    role:'<数据流|控制流>：<看点>',
+    name:'<scenario name>',
+    from:'<source of these facts>',
+    role:'<data flow|control flow>: <what to watch for>',
     steps:[
-      ['L1/USER',   '<这一步发生了什么>'],
-      ['L1/CORE',   '<下一步>'],
+      ['L1/USER',   '<what happens in this step>'],
+      ['L1/CORE',   '<the next step>'],
     ],
   },
 ];

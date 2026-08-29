@@ -1,12 +1,13 @@
 /**
- * 【可选】逐条注释。不写也没关系 —— 缺省显示完整路径 / 定义位置。
- *   FILE_NOTES：'<路径>' → 一句话（悬停文件清单那一行时显示）
- *   SYM_NOTES ：'<路径>#<符号名>' → 一句话（悬停符号清单那一行时显示）
- * 只给「值得解释」的那些写，不要逐个文件填。
+ * OPTIONAL — Per-item annotations. Leaving them out is fine — the default shows the full path /
+ * definition site instead.
+ *   FILE_NOTES: '<path>' → one line (shown when hovering that row of the file inventory)
+ *   SYM_NOTES : '<path>#<symbolName>' → one line (shown when hovering that row of the symbol inventory)
+ * Only write them for the items that are worth explaining; do not fill one in per file.
  */
 export const FILE_NOTES = {
-  // '<路径>': '<这个文件为什么这么大 / 它真正在干什么>',
+  // '<path>': '<why this file is so large / what it is really doing>',
 };
 export const SYM_NOTES = {
-  // '<路径>#<符号>': '<它为什么被导出 / 它的约束>',
+  // '<path>#<symbol>': '<why it is exported / what constrains it>',
 };

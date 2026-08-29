@@ -1,177 +1,183 @@
 ---
-name: architecture-viz
-description: "把一个代码库分析成一份自包含的交互式 C4 架构可视化 HTML：四层下钻、悬停端口看接口实际装的数据、悬停清单行看真实源码片段、可播放的典型场景流程。文件/类/函数清单由源码机读生成并逐条回源核对，因此不会漂。当用户要求深入分析代码、分析或总结项目架构/软件架构、画架构图、梳理模块与调用关系、可视化系统结构时使用。示例触发语：\"深入分析项目所有代码\"、\"分析一下项目架构\"、\"总结这个软件架构\"、\"帮我把这个仓库的架构可视化\"、\"按 C4 画一下架构\"。产出只有一个 HTML 文件。"
+name: archpresent
+description: "Turn a codebase into interactive architecture diagram as a single HTML file: four levels of drill-down, hover a port to see what the interface actually carries, hover an inventory row to see the real source snippet, and play back representative end-to-end scenarios. File/class/function inventories are extracted from source by machine and re-checked against the source line by line, so they cannot drift. Use when the user asks to analyze a codebase in depth, explain or summarize a project's architecture, draw an architecture diagram, map modules and call relationships, or visualize system structure. Example triggers: \"analyze all the code in this project\", \"explain this project's architecture\", \"summarize this software architecture\", \"visualize this repository's architecture\", \"draw the C4 diagram\". The only deliverable is one HTML file."
 ---
 
-# architecture-viz
+# archpresent
 
-把一个代码库分析成**一份自包含的交互式 C4 架构可视化 HTML**——手写语义、机读清单，并用独立回源的核对器保证清单准确。
+Turn a codebase into **one self-contained interactive C4 architecture map (a single HTML file)** — semantics written by hand, inventories extracted by machine, and a checker that independently re-reads the source to prove the inventories are accurate.
 
-## 输出契约（硬规则）
+## Output contract (hard rules)
 
-1. **只交付一个 HTML 文件**。不写 README、不写分析报告、不写 Markdown 总结、不改仓库任何现有文件、不做 git 提交。
-2. 中间产物（`inventory.json` 与语义模块）一律放在**会话临时目录**，不进仓库。
-3. 默认落点：仓库根目录 `<项目名>架构可视化.html`。用户指定了别的位置就用它。
-4. 最终回复**只报路径 + 一行统计 + 核对结论**。不要粘贴 HTML 内容，不要复述架构结论——结论在那个文件里。
+1. **Deliver exactly one HTML file.** No README, no analysis report, no Markdown summary, no edits to any existing file in the repository, no git commits.
+2. Intermediate artifacts (`inventory.json` and the semantic modules) always live in the **session temp directory**, never in the repository.
+3. Default location: `<project-name>-architecture.html` in the repository root. If the user names another location, use it.
+4. The final reply contains **only the path, one line of stats, and the verification verdict.** Do not paste HTML, do not restate the architectural conclusions — they live in that file.
 
-## 工作流
+## Workflow
 
-工作目录约定：`WORK=<会话临时目录>/archviz`，`SK=~/.claude/skills/architecture-viz`。
+Directory conventions: `WORK=<session temp dir>/archpresent`, `SK=~/.claude/skills/archpresent`.
 
-### 第 1 步 · 清点，并当场确认没漏掉整层
+### Step 1 · Take inventory, and confirm on the spot that no whole layer is missing
 
 ```bash
 node "$SK/scripts/scan.mjs" <repoRoot> "$WORK" [srcRoot ...]
 ```
 
-产出 `$WORK/inventory.json`，在 stderr 打印**目录汇总**（按符号数降序）、**符号数 > 80 的文件**、以及**未识别扩展名**。
+Writes `$WORK/inventory.json` and prints three things to stderr: the **directory summary** (descending by symbol count), the **files with more than 80 symbols**, and the **unrecognized extensions**.
 
-这三段都要读：
+Read all three:
 
-- **目录汇总**是分块设计的唯一依据。
-- **超标文件**告诉你哪些文件只能各自独占一个矩形（无法再按主题切）。
-- **未识别扩展名**是「整层被静默漏掉」的唯一征兆。看到它就停下判断：那是源码吗？
+- The **directory summary** is the only basis for your block design.
+- The **oversized files** tell you which files can only occupy a rectangle of their own (they cannot be split by theme).
+- The **unrecognized extensions** are the only symptom of "a whole layer got silently dropped". When you see one, stop and decide: is that source code?
 
-  > 已支持 TS/JS · Vue/Svelte 单文件组件 · Python · Go · Rust · JVM。
-  > 若仓库主要用别的语言（.rb / .php / .ex / .swift…），先在 `scripts/lang.mjs` 的 `SRC_EXT`
-  > 与 `scan.mjs` 的 `LANGS` 里补上再继续。漏掉一整层会让这份图从根上是错的，
-  > 而质量门**不会**替你发现——它只核对你收录了的东西。
+  > Already supported: TS/JS · Vue/Svelte single-file components · Python · Go · Rust · JVM.
+  > If the repository is mainly written in another language (.rb / .php / .ex / .swift…), add it to
+  > `SRC_EXT` in `scripts/lang.mjs` and `LANGS` in `scan.mjs` before continuing. Dropping a whole
+  > layer makes the map wrong at its root, and the quality gates **will not** catch it for you —
+  > they only check what you did include.
 
-顺手核一下规模，写标题时要用：
+Check the scale while you are here; you will need it for titles:
 
 ```bash
-node "$SK/scripts/stats.mjs" "$WORK"                      # 目录汇总 + 全仓合计
-node "$SK/scripts/stats.mjs" "$WORK" --top 20             # 最大的 20 个文件
+node "$SK/scripts/stats.mjs" "$WORK"                      # directory summary + repository totals
+node "$SK/scripts/stats.mjs" "$WORK" --top 20             # the 20 largest files
 node "$SK/scripts/stats.mjs" "$WORK" 'server/**' 'client/**'
 ```
 
-### 第 2 步 · 读代码，形成判断
+### Step 2 · Read the code and form a judgment
 
-这一步没有捷径，也是技能里唯一需要判断力的部分。有几个动作性价比最高，先做完再读散文式的源码：
+There is no shortcut here, and this is the only part of the skill that needs judgment. A few moves pay off far more than the rest — do them before you start reading prose-style source:
 
-| 想要的东西 | 固定动作 |
+| What you want | The move that gets it |
 |---|---|
-| 进程模型与装配顺序 | 读入口文件（`index/main/app`），看它 new 了什么、注册顺序是什么 |
-| 端口的「数据类型」栏 | 读 `types/constants/protocol/api/events` 这类文件——编不出来就是还没读够 |
-| 端口的「长度/容量」栏 | grep 常量区：`grep -nE "^const [A-Z_]+ =" ` / `_MS =` / `MAX_` / `TIMEOUT` |
-| 端口的「储存表/落点」栏 | 读建表 SQL、`~/.` 路径拼接、文件写入处 |
-| 对外接口面 | grep 路由注册：`grep -nE "app\.(get\|post\|put\|patch\|delete)\("` |
-| 端口的「说明」栏 | 读核心文件的**文件头注释与行内注释**——好项目的设计理由都写在那里 |
+| Process model and wiring order | Read the entry file (`index/main/app`) and see what it constructs and in what order |
+| A port's "data type" column | Read `types/constants/protocol/api/events` files — if you cannot write the type, you have not read enough |
+| A port's "size/capacity" column | Grep the constant block: `grep -nE "^const [A-Z_]+ ="` / `_MS =` / `MAX_` / `TIMEOUT` |
+| A port's "storage/landing" column | Read the table DDL, the `~/.` path joins, the places that write files |
+| The external interface surface | Grep route registration: `grep -nE "app\.(get\|post\|put\|patch\|delete)\("` |
+| A port's "why" column | Read the **file headers and inline comments** of the core files — in a good project, the design reasoning is written there |
 
-已有的架构文档（`ARCHITECTURE.md`/`AGENTS.md`/`docs/`）要读，但必须**用代码校正它**——文档滞后于代码是常态，照抄会把过时结论固化进产物。
+Read the existing architecture docs (`ARCHITECTURE.md` / `AGENTS.md` / `docs/`), but **correct them against the code** — docs lagging behind code is the normal case, and copying them freezes stale conclusions into your deliverable.
 
-### 第 3 步 · 写语义层
+### Step 3 · Write the semantic layer
 
-把 `$SK/references/template/` 全部复制到 `$WORK/`，然后按模板注释填写。**先读模板里的注释**，它们是完整的字段契约。
+Copy everything in `$SK/references/template/` into `$WORK/`, then fill it in as the template comments direct. **Read the comments in the template first** — they are the complete field contract.
 
-| 文件 | 必填 | 内容 |
+| File | Required | Contents |
 |---|---|---|
-| `dsl.mjs` | 原样 | 端口五元组构造器 |
-| `diagrams.mjs` | ✅ | 图、矩形、端口、连线——最花时间 |
-| `blockmap.mjs` | ✅ | 矩形 → 文件（模块划分的边界定义） |
-| `ret.mjs` | 建议 | 结构化端口的字段表 |
-| `code.mjs` | 建议 | 要展开真实源码片段的符号 |
-| `flows.mjs` | 建议 | 典型场景流程（跨层） |
-| `features.mjs` | 建议 | L1 功能列表 |
-| `notes.mjs` | 可选 | 逐条注释 |
+| `dsl.mjs` | as-is | The five-part port constructor |
+| `diagrams.mjs` | ✅ | Diagrams, rectangles, ports, links — the most time-consuming part |
+| `blockmap.mjs` | ✅ | Rectangle → files (the definition of your module boundaries) |
+| `ret.mjs` | recommended | Field tables for structured ports |
+| `code.mjs` | recommended | Symbols whose real source snippet should expand on hover |
+| `flows.mjs` | recommended | Representative end-to-end scenarios (crossing levels) |
+| `features.mjs` | recommended | The L1 capability list |
+| `notes.mjs` | optional | Per-item annotations |
 
-写这一步的三条操作性要求：
+Three operational requirements for this step:
 
-1. **用 Write 工具分文件写，不要用 heredoc**。中文正文里混着引号、反斜杠、`{}` 时，
-   shell heredoc 极易在中途截断。图定义超过约一千行就拆成 `diagrams/` 目录
-   （`01-l1.mjs`、`02-l2-server.mjs`…，各自 `export const DIAGRAMS = []`），
-   `build.mjs` 按文件名排序合并。
-2. **统计数字一律写占位符**：`{{files}}` `{{lines}}` `{{exports}}`，由 `build.mjs` 按
-   blockmap 的实际归属回填。手算聚合数字必错，而且**骗得过全部质量门**——
-   断言只核对清单，不核对你写在标题里的数字。
-3. **每写完一块 blockmap 就用 `stats.mjs` 核一遍模式**，命中 0 个文件的模式就是一次漏覆盖。
+1. **Use the Write tool, one file at a time — not heredocs.** When prose mixes quotes, backslashes and
+   `{}`, a shell heredoc truncates itself far too easily. Once the diagram definitions exceed roughly a
+   thousand lines, split them into a `diagrams/` directory (`01-l1.mjs`, `02-l2-server.mjs`, …, each
+   with its own `export const DIAGRAMS = []`); `build.mjs` merges them in filename order.
+2. **Always write statistics as placeholders**: `{{files}}` `{{lines}}` `{{exports}}`. `build.mjs`
+   fills them from what the blockmap actually assigns. Hand-computed aggregates are always wrong
+   eventually, and they **get past every quality gate** — the assertions check the inventories, never
+   the numbers you typed into a title. Placeholders make drift impossible.
+3. **Check each blockmap entry with `stats.mjs` as you write it.** A pattern that matches zero files is
+   a coverage hole.
 
-参考实例：`$SK/references/example/`（技能用自己的工具链分析自己），成品见 `$SK/references/example-output.html`。
+Worked example: `$SK/references/example/` (the skill analyzing itself with its own toolchain); the finished artifact is `$SK/references/example-output.html`.
 
-### 第 4 步 · 装配
+### Step 4 · Assemble
 
 ```bash
 node "$SK/scripts/build.mjs" "$WORK" <outHtml>
 ```
 
-失败即非 0 退出，不产出半成品。构建期就会拦下：同图内文件重复归属、全仓有文件未覆盖、
-`child`/连线源端口/`RET` 端口下标断链、`CODE_PICKS` 指向不存在的符号（并列出候选名）、占位符填不上。
+A failure exits non-zero and produces nothing half-finished. Build time already catches: a file assigned
+to two rectangles in the same diagram, any repository file left uncovered, a dangling `child` / link
+source port / `RET` port index, `CODE_PICKS` pointing at a symbol that does not exist (it lists the
+candidate names for you), and placeholders it cannot fill.
 
-### 第 5 步 · 过质量门（不可跳过）
+### Step 5 · Pass the quality gates (not skippable)
 
 ```bash
-node "$SK/scripts/verify.mjs" <outHtml> <repoRoot> [srcRoot ...]   # 必须 8 类断言全 0
-node "$SK/scripts/smoke.mjs"  <outHtml>                            # 必须全部通过
+node "$SK/scripts/verify.mjs" <outHtml> <repoRoot> [srcRoot ...]   # all 8 assertion classes must be 0
+node "$SK/scripts/smoke.mjs"  <outHtml>                            # everything must pass
 ```
 
-有任何一条失败就回到第 3/4 步修，**不要在报告里说「基本可用」**。
+If anything fails, go back to step 3 or 4 and fix it. **Never report it as "basically working".**
 
-交付前对着这张表自检：
+Self-check against this list before you deliver:
 
-- [ ] scan 的「未识别扩展名」为空，或已确认那些不是源码
-- [ ] `UNCOVERED_FILE` 为 0，且 verify 报告里「去重 N 个 / 仓库实有 N 个」两个数**相等**
-- [ ] 标题与副标题里没有手写的聚合数字（全是占位符或 stats.mjs 算的）
-- [ ] 每个端口的五栏都不是空话；写不出真实类型就回去读代码
-- [ ] 至少一条 L4 关键链路状态机（这是全份图谱信息量最高的部分）
-- [ ] 仓库工作区除了那个 HTML 没有多出任何文件
+- [ ] scan's "unrecognized extensions" section is empty, or you have confirmed those are not source
+- [ ] `UNCOVERED_FILE` is 0, and the two numbers in the verify report ("N deduplicated / N present in repo") are **equal**
+- [ ] No hand-written aggregate numbers in any title or subtitle (all of them are placeholders or came from stats.mjs)
+- [ ] None of the five port columns is filler; if you cannot write the real type, go read more code
+- [ ] At least one L4 critical-path state machine (the single most informative part of the whole map)
+- [ ] Nothing new in the repository working tree except that one HTML file
 
-## 模块划分规则：目录 > 文件 > 类
+## The partition rule: directory > file > class
 
-这三级映射到三种载体，是本技能的核心约定：
+These three levels map onto three carriers. This is the core convention of the skill:
 
-| C4 载体 | 对应 | 谁来写 |
+| C4 carrier | Corresponds to | Who writes it |
 |---|---|---|
-| L2/L3 矩形 | **目录**（或目录内主题子群） | 你（`diagrams.mjs` + `blockmap.mjs`） |
-| 「文件清单」抽屉 | **文件**（真实路径 + 真实行数） | 机器生成 |
-| 「内部类 / 对象」抽屉 | **类/对象/函数**（按文件分组，带种类与行号） | 机器生成 |
-| L4 文件级模块图 | 一个矩形 = 一个文件 | `autoFiles` 自动摊开 |
+| L2/L3 rectangle | a **directory** (or a thematic subgroup inside one) | you (`diagrams.mjs` + `blockmap.mjs`) |
+| The "file inventory" drawer | **files** (real paths + real line counts) | machine-generated |
+| The "internal classes / objects" drawer | **classes/objects/functions** (grouped by file, with kind and line number) | machine-generated |
+| L4 file-level module map | one rectangle = one file | expanded automatically by `autoFiles` |
 
-分层建议：
+Suggested layering:
 
-- **L1** 1 张：系统上下文。人、各进程/服务、外部依赖、数据面。
-- **L2** 每个进程/顶层容器 1 张。
-- **L3** 每个目录 1 张，矩形是目录内的主题子群。
-- **L4** 两类：跨模块的**关键链路状态机**（最有信息量，务必写），以及超大目录的**文件级模块图**（`autoFiles`）。
+- **L1**, one diagram: system context. People, processes/services, external dependencies, the data plane.
+- **L2**, one per process / top-level container.
+- **L3**, one per directory; the rectangles are thematic subgroups inside that directory.
+- **L4**, two kinds: cross-module **critical-path state machines** (by far the most informative — always write at least one), and **file-level module maps** for oversized directories (`autoFiles`).
 
-约束：**每个矩形的符号数 ≤ 80**。超了就按主题再切。
+Constraint: **at most 80 symbols per rectangle.** Over that, split again by theme.
 
-例外是**单个文件**就超过 80 的情况（scan 会在结尾直接列出来）：它无法再切，
-处理方式是让它**独占一个矩形**，用 `k:'risk'` 标出来，并在 `d` 里写清楚它为什么这么大、
-体量集中在哪几件事上。这类文件本身就是重构信号，图谱把它显式画出来才有价值。
+The exception is a **single file** that alone exceeds 80 (scan lists these explicitly at the end of its output): it cannot be split, so give it **a rectangle of its own**, mark it `k:'risk'`, and use `d` to say why it is that large and which few concerns the bulk of it serves. A file like that is itself a refactoring signal; the map is only worth reading if it shows that explicitly.
 
-## 端口写法规则
+## How to write ports
 
-端口是这份图谱最值钱的产出。`p(名称, 数据类型, 长度/容量, 储存表/落点, 说明)` 五栏各有硬要求：
+Ports are the most valuable output of this map. Each of the five columns of `p(name, dataType, size, storage, why)` has a hard requirement:
 
-- **数据类型** 必须是**真实标识符**：`RpcRequest{id,method,params,token?}`，不是「请求对象」。
-- **长度/容量** 写真实约束：`≤50 并发 · 200 req/s`、`环形 1024 · 单次 ≤256`。确实没有就写「逐次」。
-- **储存表/落点** 写真实落点：`~/.wmux/sessions.json`、`\\.\pipe\wmux-<用户名>`。没有就写 `—`。
-- **说明** 写**约束的理由、踩过的坑、失效模式**——不要复述函数名。这一栏决定这份图值不值得看。
+- **dataType** must be a **real identifier**: `RpcRequest{id,method,params,token?}`, not "a request object".
+- **size** states the real constraint: `≤50 concurrent · 200 req/s`, `ring buffer 1024 · ≤256 per call`. If there genuinely is none, write "per call".
+- **storage** states the real landing place: `~/.wmux/sessions.json`, `\\.\pipe\wmux-<user>`. If there is none, write `—`.
+- **why** states **the reason for the constraint, the trap someone already hit, the failure mode** — never a restatement of the function name. This column decides whether the map is worth reading.
 
-同理，矩形的 `d` 写「为什么是这样」，`sub` 写「这张图真正想说的那件事」。**通篇不要出现「负责处理相关逻辑」这类空话。**
+By the same rule, a rectangle's `d` says *why it is like this*, and `sub` says *the one thing this diagram is really about*. **Nothing anywhere should read like "handles the related logic".**
 
-## 资源
+## Resources
 
 ```
-scripts/lang.mjs     scan 与 verify 共享的「哪些文件算源文件」（唯一共享层）
-scripts/scan.mjs     只读代码清点器（TS/JS · SFC · Python · Go · Rust · JVM 六族）
-scripts/stats.mjs    按 blockmap 同款模式统计文件/行/符号；核验路径模式命中情况
-scripts/build.mjs    装配器 + 第一道质量门 + 统计占位符回填
-scripts/verify.mjs   独立回源核对器（8 类断言）
-scripts/smoke.mjs    桩化 DOM 冒烟测试（不需要真浏览器）
-assets/engine.js     Canvas 渲染引擎，与数据完全解耦，原样拼接
-references/template/ 语义模块模板，注释即字段契约
-references/example/  参考实例的语义层（技能分析自己）
-references/example-output.html  参考成品
+scripts/lang.mjs     "what counts as a source file", shared by scan and verify
+scripts/patterns.mjs the blockmap path-pattern vocabulary, shared by build and stats — so the counts
+                     stats reports can never disagree with the ownership build actually assigns
+scripts/scan.mjs     read-only inventory extractor (six families: TS/JS · SFC · Python · Go · Rust · JVM)
+scripts/stats.mjs    file/line/symbol stats using blockmap's own pattern syntax; verifies pattern hits
+scripts/build.mjs    assembler + first quality gate + statistics placeholder fill-in
+scripts/verify.mjs   independent back-to-source checker (8 assertion classes)
+scripts/smoke.mjs    stubbed-DOM smoke test (no real browser required)
+assets/engine.js     Canvas rendering engine, fully decoupled from data, concatenated verbatim
+                     (includes the ✎ Edit mode: click any label to rewrite it, Ctrl+drag a rectangle
+                      to reposition it; both persist to the viewer's localStorage, never to this file)
+references/template/ semantic module templates; the comments are the field contract
+references/example/  the semantic layer of the worked example (the skill analyzing itself)
+references/example-output.html  the finished reference artifact
 ```
 
-## 常见陷阱
+## Common traps
 
-- **整层被静默漏掉**。扫描器不认识的扩展名不会进清单，verify 也不会追究——它只核对你收录了的东西。
-  scan 结尾的「未识别扩展名」提示是唯一的征兆，务必读。
-- **手算聚合统计**。「12 文件 / 4327 行」这类数字写在标题里，改完分块就漂，而且全部断言都不查它。用占位符。
-- **照抄过时的架构文档**。文档滞后于代码是常态；必须用目录汇总与源码校正它。
-- **端口写成空话**。「输入：数据；输出：结果」等于没写。写不出真实类型，就说明还没读够代码。
-- **忘了全覆盖**。`UNCOVERED_FILE` 最容易被忽略——它意味着模块划分漏了一块。
-- **手写清单**。任何时候都不要手写文件名、行数、类名、行号——那正是这套工具链存在的理由。
-- **顺手多写文件**。技能只交付 HTML；额外的 Markdown 报告违反输出契约。
+- **A whole layer silently dropped.** Extensions the scanner does not recognize never enter the inventory, and verify will not object either — it only checks what you included. The "unrecognized extensions" note at the end of scan is the only symptom; read it.
+- **Hand-computed aggregates.** Numbers like "12 files / 4327 lines" typed into a title drift the moment you adjust the partitioning, and no assertion checks them. Use placeholders.
+- **Copying a stale architecture doc.** Docs lagging behind code is the normal case; correct them against the directory summary and the source.
+- **Filler ports.** "Input: data; output: result" is the same as writing nothing. If you cannot write the real type, you have not read enough code.
+- **Forgetting full coverage.** `UNCOVERED_FILE` is the easiest one to overlook — it means your partitioning missed something.
+- **Hand-writing inventories.** Never type a filename, line count, class name, or line number by hand — that is precisely why this toolchain exists.
+- **Writing extra files along the way.** The skill delivers only the HTML; an extra Markdown report violates the output contract.

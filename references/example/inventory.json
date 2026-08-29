@@ -1,61 +1,61 @@
 {
- "root": "C:/Users/80576/.claude/skills/architecture-viz",
+ "root": ".",
  "roots": [
   "scripts",
   "references/template"
  ],
  "totals": {
   "files": 14,
-  "lines": 1461,
-  "exports": 18,
-  "filesWithExports": 9,
+  "lines": 1545,
+  "exports": 113,
+  "filesWithExports": 14,
   "dirs": 2
  },
  "dirs": [
   {
    "dir": "references/template",
    "files": 8,
-   "lines": 260,
+   "lines": 281,
    "exports": 10
   },
   {
    "dir": "scripts",
    "files": 6,
-   "lines": 1201,
-   "exports": 8
+   "lines": 1264,
+   "exports": 103
   }
  ],
  "files": [
   {
    "path": "references/template/blockmap.mjs",
-   "lines": 31,
+   "lines": 33,
    "exports": [
     {
      "name": "BLOCKMAP",
      "kind": "const",
-     "line": 27
+     "line": 29
     }
    ]
   },
   {
    "path": "references/template/code.mjs",
-   "lines": 13,
+   "lines": 15,
    "exports": [
     {
      "name": "CODE_PICKS",
      "kind": "const",
-     "line": 10
+     "line": 12
     }
    ]
   },
   {
    "path": "references/template/diagrams.mjs",
-   "lines": 157,
+   "lines": 165,
    "exports": [
     {
      "name": "DIAGRAMS",
      "kind": "const",
-     "line": 66
+     "line": 74
     }
    ]
   },
@@ -77,61 +77,232 @@
   },
   {
    "path": "references/template/features.mjs",
-   "lines": 8,
+   "lines": 10,
    "exports": [
     {
      "name": "FEATURES",
      "kind": "const",
-     "line": 5
+     "line": 7
     }
    ]
   },
   {
    "path": "references/template/flows.mjs",
-   "lines": 17,
+   "lines": 20,
    "exports": [
     {
      "name": "FLOWS",
      "kind": "const",
-     "line": 6
+     "line": 9
     }
    ]
   },
   {
    "path": "references/template/notes.mjs",
-   "lines": 13,
+   "lines": 14,
    "exports": [
     {
      "name": "FILE_NOTES",
      "kind": "const",
-     "line": 7
+     "line": 8
     },
     {
      "name": "SYM_NOTES",
      "kind": "const",
-     "line": 10
+     "line": 11
     }
    ]
   },
   {
    "path": "references/template/ret.mjs",
-   "lines": 15,
+   "lines": 18,
    "exports": [
     {
      "name": "RET_TABLES",
      "kind": "const",
-     "line": 10
+     "line": 13
     }
    ]
   },
   {
    "path": "scripts/build.mjs",
    "lines": 377,
-   "exports": []
+   "exports": [
+    {
+     "name": "SELF",
+     "kind": "const",
+     "line": 18
+    },
+    {
+     "name": "ARCH",
+     "kind": "const",
+     "line": 24
+    },
+    {
+     "name": "imp",
+     "kind": "const",
+     "line": 25
+    },
+    {
+     "name": "INV",
+     "kind": "const",
+     "line": 27
+    },
+    {
+     "name": "REPO",
+     "kind": "const",
+     "line": 28
+    },
+    {
+     "name": "BY_PATH",
+     "kind": "const",
+     "line": 29
+    },
+    {
+     "name": "loadDiagrams",
+     "kind": "function",
+     "line": 33
+    },
+    {
+     "name": "DIAGRAMS",
+     "kind": "const",
+     "line": 52
+    },
+    {
+     "name": "match",
+     "kind": "function",
+     "line": 64
+    },
+    {
+     "name": "selectFiles",
+     "kind": "function",
+     "line": 80
+    },
+    {
+     "name": "levelOf",
+     "kind": "const",
+     "line": 114
+    },
+    {
+     "name": "ownerByDia",
+     "kind": "const",
+     "line": 118
+    },
+    {
+     "name": "entries",
+     "kind": "const",
+     "line": 119
+    },
+    {
+     "name": "isRest",
+     "kind": "function",
+     "line": 120
+    },
+    {
+     "name": "uncovered",
+     "kind": "const",
+     "line": 138
+    },
+    {
+     "name": "childOf",
+     "kind": "const",
+     "line": 146
+    },
+    {
+     "name": "filesOfDia",
+     "kind": "const",
+     "line": 148
+    },
+    {
+     "name": "AGGREGATED",
+     "kind": "const",
+     "line": 164
+    },
+    {
+     "name": "countOf",
+     "kind": "const",
+     "line": 170
+    },
+    {
+     "name": "fillTemplate",
+     "kind": "function",
+     "line": 175
+    },
+    {
+     "name": "UNFILLED",
+     "kind": "const",
+     "line": 177
+    },
+    {
+     "name": "KIND_ORDER",
+     "kind": "const",
+     "line": 203
+    },
+    {
+     "name": "FILES_OUT",
+     "kind": "const",
+     "line": 208
+    },
+    {
+     "name": "CODE_OUT",
+     "kind": "const",
+     "line": 227
+    },
+    {
+     "name": "diaIds",
+     "kind": "const",
+     "line": 256
+    },
+    {
+     "name": "blockKeys",
+     "kind": "const",
+     "line": 257
+    },
+    {
+     "name": "J",
+     "kind": "const",
+     "line": 297
+    },
+    {
+     "name": "title",
+     "kind": "const",
+     "line": 298
+    },
+    {
+     "name": "chunks",
+     "kind": "const",
+     "line": 299
+    },
+    {
+     "name": "D",
+     "kind": "const",
+     "line": 313
+    },
+    {
+     "name": "dia",
+     "kind": "const",
+     "line": 314
+    },
+    {
+     "name": "p",
+     "kind": "function",
+     "line": 315
+    },
+    {
+     "name": "blocks",
+     "kind": "const",
+     "line": 370
+    },
+    {
+     "name": "ports",
+     "kind": "const",
+     "line": 371
+    }
+   ]
   },
   {
    "path": "scripts/lang.mjs",
-   "lines": 59,
+   "lines": 60,
    "exports": [
     {
      "name": "SFC_EXT",
@@ -146,54 +317,363 @@
     {
      "name": "JS_EXT",
      "kind": "const",
-     "line": 21
+     "line": 22
     },
     {
      "name": "SKIP_DIR",
      "kind": "const",
-     "line": 23
+     "line": 24
     },
     {
      "name": "ROOT_HINTS",
      "kind": "const",
-     "line": 32
+     "line": 33
     },
     {
      "name": "isTest",
      "kind": "const",
-     "line": 35
+     "line": 36
     },
     {
      "name": "scriptRanges",
      "kind": "function",
-     "line": 43
+     "line": 44
     },
     {
      "name": "inScript",
      "kind": "function",
-     "line": 58
+     "line": 59
     }
    ]
   },
   {
    "path": "scripts/scan.mjs",
-   "lines": 302,
-   "exports": []
+   "lines": 361,
+   "exports": [
+    {
+     "name": "LANGS",
+     "kind": "const",
+     "line": 25
+    },
+    {
+     "name": "CLASSIC_RULES",
+     "kind": "const",
+     "line": 118
+    },
+    {
+     "name": "IIFE_HEAD",
+     "kind": "const",
+     "line": 123
+    },
+    {
+     "name": "hasExport",
+     "kind": "const",
+     "line": 124
+    },
+    {
+     "name": "EXT2LANG",
+     "kind": "const",
+     "line": 126
+    },
+    {
+     "name": "SFC_BARE_MACRO",
+     "kind": "const",
+     "line": 130
+    },
+    {
+     "name": "SFC_DESTRUCTURED",
+     "kind": "const",
+     "line": 132
+    },
+    {
+     "name": "ASSET_EXT",
+     "kind": "const",
+     "line": 136
+    },
+    {
+     "name": "unknownExt",
+     "kind": "const",
+     "line": 141
+    },
+    {
+     "name": "walk",
+     "kind": "function",
+     "line": 143
+    },
+    {
+     "name": "detectRoots",
+     "kind": "function",
+     "line": 162
+    },
+    {
+     "name": "refine",
+     "kind": "function",
+     "line": 170
+    },
+    {
+     "name": "refineSfc",
+     "kind": "function",
+     "line": 186
+    },
+    {
+     "name": "extractSfc",
+     "kind": "function",
+     "line": 200
+    },
+    {
+     "name": "extractClassic",
+     "kind": "function",
+     "line": 231
+    },
+    {
+     "name": "extract",
+     "kind": "function",
+     "line": 251
+    },
+    {
+     "name": "roots",
+     "kind": "const",
+     "line": 301
+    },
+    {
+     "name": "files",
+     "kind": "const",
+     "line": 302
+    },
+    {
+     "name": "records",
+     "kind": "const",
+     "line": 306
+    },
+    {
+     "name": "byDir",
+     "kind": "const",
+     "line": 318
+    },
+    {
+     "name": "totals",
+     "kind": "const",
+     "line": 324
+    },
+    {
+     "name": "oversized",
+     "kind": "const",
+     "line": 346
+    }
+   ]
   },
   {
    "path": "scripts/smoke.mjs",
    "lines": 164,
-   "exports": []
+   "exports": [
+    {
+     "name": "HTML",
+     "kind": "const",
+     "line": 10
+    },
+    {
+     "name": "html",
+     "kind": "const",
+     "line": 12
+    },
+    {
+     "name": "src",
+     "kind": "const",
+     "line": 13
+    },
+    {
+     "name": "drawCalls",
+     "kind": "const",
+     "line": 16
+    },
+    {
+     "name": "ctx2d",
+     "kind": "const",
+     "line": 17
+    },
+    {
+     "name": "listeners",
+     "kind": "const",
+     "line": 30
+    },
+    {
+     "name": "mkEl",
+     "kind": "function",
+     "line": 31
+    },
+    {
+     "name": "canvas",
+     "kind": "const",
+     "line": 40
+    },
+    {
+     "name": "sandbox",
+     "kind": "const",
+     "line": 41
+    },
+    {
+     "name": "run",
+     "kind": "function",
+     "line": 135
+    },
+    {
+     "name": "probe",
+     "kind": "const",
+     "line": 147
+    }
+   ]
   },
   {
    "path": "scripts/stats.mjs",
    "lines": 90,
-   "exports": []
+   "exports": [
+    {
+     "name": "INV",
+     "kind": "const",
+     "line": 25
+    },
+    {
+     "name": "match",
+     "kind": "function",
+     "line": 28
+    },
+    {
+     "name": "sum",
+     "kind": "const",
+     "line": 44
+    },
+    {
+     "name": "fmt",
+     "kind": "const",
+     "line": 49
+    },
+    {
+     "name": "topIdx",
+     "kind": "const",
+     "line": 51
+    },
+    {
+     "name": "patterns",
+     "kind": "const",
+     "line": 52
+    },
+    {
+     "name": "inc",
+     "kind": "const",
+     "line": 74
+    },
+    {
+     "name": "exc",
+     "kind": "const",
+     "line": 75
+    }
+   ]
   },
   {
    "path": "scripts/verify.mjs",
-   "lines": 209,
-   "exports": []
+   "lines": 212,
+   "exports": [
+    {
+     "name": "html",
+     "kind": "const",
+     "line": 28
+    },
+    {
+     "name": "start",
+     "kind": "const",
+     "line": 29
+    },
+    {
+     "name": "engineAt",
+     "kind": "const",
+     "line": 30
+    },
+    {
+     "name": "ctx",
+     "kind": "const",
+     "line": 32
+    },
+    {
+     "name": "roots",
+     "kind": "const",
+     "line": 41
+    },
+    {
+     "name": "realFiles",
+     "kind": "const",
+     "line": 43
+    },
+    {
+     "name": "walk",
+     "kind": "function",
+     "line": 45
+    },
+    {
+     "name": "cache",
+     "kind": "const",
+     "line": 56
+    },
+    {
+     "name": "linesOf",
+     "kind": "const",
+     "line": 57
+    },
+    {
+     "name": "fail",
+     "kind": "const",
+     "line": 63
+    },
+    {
+     "name": "err",
+     "kind": "function",
+     "line": 64
+    },
+    {
+     "name": "stat",
+     "kind": "const",
+     "line": 65
+    },
+    {
+     "name": "claimed",
+     "kind": "const",
+     "line": 67
+    },
+    {
+     "name": "JSFAM",
+     "kind": "const",
+     "line": 80
+    },
+    {
+     "name": "SFCFAM",
+     "kind": "const",
+     "line": 81
+    },
+    {
+     "name": "sfcRangeCache",
+     "kind": "const",
+     "line": 82
+    },
+    {
+     "name": "scriptRangesOf",
+     "kind": "const",
+     "line": 83
+    },
+    {
+     "name": "KIND_PAT",
+     "kind": "const",
+     "line": 87
+    },
+    {
+     "name": "blockKeys",
+     "kind": "const",
+     "line": 162
+    },
+    {
+     "name": "byCode",
+     "kind": "const",
+     "line": 195
+    }
+   ]
   }
  ]
 }

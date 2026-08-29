@@ -1,156 +1,164 @@
 /**
- * 【必填】图谱定义 —— 手写的语义层。
+ * REQUIRED — Diagram definitions — the hand-written semantic layer.
  *
- * 每个矩形是一个「目录」（L2/L3）或一个「文件」（L4 文件级模块图）。
- * 文件清单与类/对象/函数清单由 build.mjs 从 inventory.json 自动挂上来，**不要手写**。
- * 这里只写人才能写的东西：这个模块是什么、它的输入输出实际装着什么数据。
+ * Every rectangle is one "directory" (L2/L3) or one "file" (an L4 file-level module map).
+ * The file inventory and the class/object/function inventory are attached automatically by
+ * build.mjs from inventory.json — **never write them by hand**. Write only what a person can
+ * write: what this module is, and what the data flowing in and out of it actually contains.
  *
- * 文件太长时可以拆成 `diagrams/` 目录：01-l1.mjs、02-l2.mjs、03-l3.mjs…
- * 每个分片各自 `export const DIAGRAMS = []`，build.mjs 按文件名排序合并。
- * 超过约一千行就该拆 —— 单文件写到两三千行时，改一处要滚半天才找得到。
+ * When this file gets long, split it into a `diagrams/` directory: 01-l1.mjs, 02-l2.mjs, 03-l3.mjs…
+ * Each shard does its own `export const DIAGRAMS = []`, and build.mjs merges them in filename order.
+ * Past roughly a thousand lines you should split — at two or three thousand, every edit means
+ * scrolling forever to find the spot.
  *
- * 图对象字段：
- *   id      唯一 id，形如 'L1' / 'L2-MAIN' / 'L3-PTY' / 'L4-PTYFLOW'
- *   lv      1|2|3|4 —— C4 的四层
- *   parent  上层图 id（L1 不填）；决定面包屑
- *   title   图标题（L1 的 title 会成为 HTML 的 <title>）
- *   sub     一句副标题，写「这张图真正想说的那件事」，不要复述标题
- *   colw    列宽，默认 262；块多时调小到 210~250
- *   blocks  矩形数组
- *   links   连线数组 { s:[块id, 输出端口下标], t:[块id, 输入端口下标], l:'标签' }
- *           目标块若没有对应下标的输入端口，引擎会用源端口的五元组自动合成一个 ——
- *           L4 状态机正是靠这条只写 out 不写 in。必须存在的只有**源**端口。
- *   autoFiles / autoCols   L4 文件级模块图专用：给一组路径模式，自动一文件一块
+ * Diagram fields:
+ *   id      unique id, e.g. 'L1' / 'L2-MAIN' / 'L3-PTY' / 'L4-PTYFLOW'
+ *   lv      1|2|3|4 — the four C4 levels
+ *   parent  id of the parent diagram (omit for L1); this drives the breadcrumb
+ *   title   diagram title (the L1 title also becomes the HTML <title>)
+ *   sub     one subtitle line: "the one thing this diagram is really about", never a restatement
+ *   colw    column width, default 262; drop to 210–250 when there are many blocks
+ *   blocks  array of rectangles
+ *   links   array of links { s:[blockId, outPortIndex], t:[blockId, inPortIndex], l:'label' }
+ *           If the target block has no input port at that index, the engine synthesizes one from
+ *           the source port's five fields — that is exactly how an L4 state machine gets away with
+ *           writing only `out`. The only thing that MUST exist is the **source** port.
+ *   autoFiles / autoCols   for L4 file-level maps only: give path patterns, get one block per file
  *
- * 矩形字段：
- *   id n t k col row  —— id、名称、副标题（写真实路径 + 规模）、种类、列、行
- *   child  下钻目标图 id
- *   d      悬停时的说明。写「为什么是这样」，不要写「它做了什么」
- *   in/out 端口数组，用 p(名称, 数据类型, 长度/容量, 储存表/落点, 说明)
+ * Rectangle fields:
+ *   id n t k col row  —  id, name, subtitle (real path + real size), kind, column, row
+ *   child  id of the diagram to drill into
+ *   d      the hover description. Write "why it is like this", not "what it does"
+ *   in/out arrays of ports, built with p(name, dataType, size/capacity, storage/landing, why)
  *
- * 【统计数字一律用占位符，不要手算】
- *   在 t / d / title / sub 里写 {{files}} {{lines}} {{exports}}，build.mjs 会按
- *   该矩形（或整张图）在 blockmap 里实际归属的文件回填：
- *       t:'routes/ · {{files}} 文件 / {{lines}} 行'
- *       t:'session-manager.ts · {{lines}} 行 · {{exports}} 导出'
- *   手写「12 文件 / 4327 行」是最容易在调整分块后忘记同步的一处，而且它能骗过
- *   全部质量门（断言只核对清单，不核对你写在标题里的数字）。占位符让它不可能漂。
- *   占位符覆盖不到的地方（跨图总量、L1 副标题）用 `node scripts/stats.mjs <workDir> <模式>` 算。
- *   注意：有 child 的块，占位符统计的是**子图聚合后的全部文件**——如果块名指的是单个
- *   文件（比如叫 "scan.mjs" 却 child 到整条工具链），就别在它身上用占位符。
+ * NEVER hand-compute statistics: use placeholders.
+ *   Write {{files}} {{lines}} {{exports}} inside t / d / title / sub and build.mjs fills them from
+ *   the files that rectangle (or the whole diagram) actually owns in the blockmap:
+ *       t:'routes/ · {{files}} files / {{lines}} lines'
+ *       t:'session-manager.ts · {{lines}} lines · {{exports}} exports'
+ *   Typing "12 files / 4327 lines" is the single easiest thing to forget to update after you adjust
+ *   the partitioning, and it gets past every quality gate (the assertions check the inventories, not
+ *   the numbers in your titles). Placeholders make that drift impossible.
+ *   For what placeholders cannot reach (cross-diagram totals, the L1 subtitle) use
+ *   `node scripts/stats.mjs <workDir> <patterns>`.
+ *   Note: for a block with a `child`, the placeholders count **all files aggregated from the child
+ *   diagram** — so if the block's name refers to a single file (it is called "scan.mjs" but drills
+ *   into the whole toolchain), do not use placeholders on it.
  *
- * 【k 的取值与含义】颜色与语义绑定，别随手选：
- *   person 人 / 角色              ext    外部系统（第三方服务、SDK、平台）
- *   extc   外部进程或设备（pty、子进程、硬件）
- *   app    自有的进程 / 核心子系统（最醒目，留给真正的主角）
- *   comp   普通组件、模块          lib    无状态的库、工具、纯函数层
- *   code   代码级步骤（L4 状态机的每一步）
- *   store  数据落点（库、表、文件、缓存）
- *   risk   风险点：全局可变状态、并发陷阱、超大文件、平台相关的安全弱化
- *   note   视图入口、说明性方块（不参与主链路）
+ * Values of `k` and what they mean. Colour is bound to meaning; do not pick at random:
+ *   person a person / role            ext    external system (third-party service, SDK, platform)
+ *   extc   external process or device (a pty, a child process, hardware)
+ *   app    your own process / core subsystem (the loudest one — save it for the real protagonist)
+ *   comp   an ordinary component or module      lib  a stateless library, utility or pure-function layer
+ *   code   a code-level step (each step of an L4 state machine)
+ *   store  a data landing place (database, table, file, cache)
+ *   risk   a risk: global mutable state, a concurrency trap, an oversized file, a platform-specific weakening
+ *   note   a view entry point or an explanatory box (not part of the main path)
  *
- * 端口五元组是这份图谱最核心的产出，规则：
- *   - 名称   自然语义，人话
- *   - 数据类型  **真实标识符**，如 RpcRequest{id,method,params,token?}，不要写「对象」
- *   - 长度/容量 真实约束，如「≤50 并发 · 200 req/s」「环形 1024 · 单次 ≤256」，没有就写「逐次」
- *   - 储存表/落点 真实落点，如 '~/.wmux/sessions.json'、'\\\\.\\pipe\\wmux-<用户名>'，没有就写 '—'
- *   - 说明   这一条最值钱：写约束的理由、踩过的坑、失效模式
+ * The five-part port is the core output of this map. The rules:
+ *   - name       natural language, written for a human
+ *   - dataType   a **real identifier**, e.g. RpcRequest{id,method,params,token?} — never "an object"
+ *   - size       the real constraint: "≤50 concurrent · 200 req/s", "ring 1024 · ≤256 per call";
+ *                if there genuinely is none, write "per call"
+ *   - storage    the real landing place: '~/.wmux/sessions.json', '\\\\.\\pipe\\wmux-<user>'; '—' if none
+ *   - why        the most valuable column: the reason for the constraint and the failure mode
  *
- * 对照（同一个端口，坏的 → 好的）：
- *   ✗ p('请求','请求对象','若干','数据库','处理用户请求')
- *   ✓ p('入站请求','{clientId, cwd?, worktree?}','每 clientId 可挂多个 sessionId',
- *       'session_skill_policies 表','技能策略在建会话时定死并落库，改技能必须销毁重建会话对象')
+ * Side by side (the same port, bad → good):
+ *   ✗ p('request','a request object','some','the database','handles the user request')
+ *   ✓ p('inbound request','{clientId, cwd?, worktree?}','many sessionIds per clientId',
+ *       'session_skill_policies table','The skill policy is fixed at session creation and persisted;
+ *        changing skills therefore requires destroying and recreating the session object')
  */
 import { p } from './dsl.mjs';
 
 export const DIAGRAMS = [];
 const dia = o => DIAGRAMS.push(o);
 
-/* ============================ L1 · 系统上下文 ============================ */
+/* ============================ L1 · system context ============================ */
 dia({
   id:'L1', lv:1,
-  title:'系统上下文 · <项目名>（<版本>）',
-  sub:'<一句话点出这个系统的组织原则> · {{files}} 个源文件 / {{lines}} 行 / {{exports}} 个导出符号',
+  title:'System context · <project> (<version>)',
+  sub:'<one line naming this system\'s organising principle> · {{files}} source files / {{lines}} lines / {{exports}} exported symbols',
   colw:268,
   blocks:[
-    { id:'USER', n:'操作者', t:'Person · <入口形态>', k:'person', col:0, row:0,
-      d:'<人从哪几条路进入这个系统，以及哪些决策只有人能做>',
-      out:[ p('<输入名>','<真实类型>','<容量>','<落点>','<为什么>') ],
-      in:[  p('<反馈名>','<真实类型>','<频率>','—','<为什么>') ]},
+    { id:'USER', n:'Operator', t:'Person · <how they arrive>', k:'person', col:0, row:0,
+      d:'<which routes people take into this system, and which decisions only a person can make>',
+      out:[ p('<input>','<real type>','<capacity>','<landing>','<why>') ],
+      in:[  p('<feedback>','<real type>','<frequency>','—','<why>') ]},
 
-    { id:'CORE', n:'<核心进程/服务>', t:'<目录> · {{files}} 文件 / {{lines}} 行', k:'app', col:1, row:0,
+    { id:'CORE', n:'<core process/service>', t:'<directory> · {{files}} files / {{lines}} lines', k:'app', col:1, row:0,
       child:'L2-CORE',
-      d:'<它凭什么是核心 —— 它独占了什么资源或权限>',
-      in:[  p('<入站>','<真实类型>','<限流/容量>','<传输端点>','<约束的理由>') ],
-      out:[ p('<出站>','<真实类型>','<频率>','<落点>','<失效模式>') ]},
+      d:'<what makes it the core — which resource or privilege it owns exclusively>',
+      in:[  p('<inbound>','<real type>','<rate limit / capacity>','<transport endpoint>','<reason for the constraint>') ],
+      out:[ p('<outbound>','<real type>','<frequency>','<landing>','<failure mode>') ]},
 
-    { id:'STORE', n:'<数据面>', t:'Store · <格式>', k:'store', col:2, row:0,
-      d:'<跨进程的共同事实存在哪里>',
-      in:[  p('落盘','<结构>','<原子性>','<路径>','<掉电语义>') ],
-      out:[ p('回读','<结构>','按需','<路径>','<恢复语义>') ]},
+    { id:'STORE', n:'<data plane>', t:'Store · <format>', k:'store', col:2, row:0,
+      d:'<where the facts shared across processes live>',
+      in:[  p('write','<structure>','<atomicity>','<path>','<power-loss semantics>') ],
+      out:[ p('read back','<structure>','on demand','<path>','<recovery semantics>') ]},
 
-    { id:'EXT', n:'<外部依赖>', t:'External · <协议>', k:'ext', col:3, row:0,
-      d:'<边界在哪，失败时降级成什么>',
-      in:[  p('出站请求','<协议>','逐次','—','<凭据从哪来>') ],
-      out:[ p('回包','<结构>','逐次','—','<超时/错误怎么处理>') ]},
+    { id:'EXT', n:'<external dependency>', t:'External · <protocol>', k:'ext', col:3, row:0,
+      d:'<where the boundary is and what it degrades to on failure>',
+      in:[  p('outbound request','<protocol>','per call','—','<where the credentials come from>') ],
+      out:[ p('response','<structure>','per call','—','<timeout / error handling>') ]},
   ],
   links:[
-    { s:['USER',0], t:['CORE',0],  l:'<载荷>' },
-    { s:['CORE',0], t:['STORE',0], l:'<载荷>' },
-    { s:['CORE',0], t:['EXT',0],   l:'<载荷>' },
+    { s:['USER',0], t:['CORE',0],  l:'<payload>' },
+    { s:['CORE',0], t:['STORE',0], l:'<payload>' },
+    { s:['CORE',0], t:['EXT',0],   l:'<payload>' },
   ],
 });
 
-/* ==================== L2 · 容器图（每个 L1 的 app 块一张） ==================== */
+/* ==================== L2 · container (one per `app` block in L1) ==================== */
 dia({
   id:'L2-CORE', lv:2, parent:'L1',
-  title:'容器 · <核心进程>（<目录> · {{files}} 文件 / {{lines}} 行）',
-  sub:'<这个进程内部的分层原则>',
+  title:'Container · <core process> (<directory> · {{files}} files / {{lines}} lines)',
+  sub:'<the layering principle inside this process>',
   colw:256,
   blocks:[
-    { id:'SUB1', n:'<子系统>', t:'<子目录>/ · {{files}} 文件 / {{lines}} 行', k:'comp', col:0, row:0,
+    { id:'SUB1', n:'<subsystem>', t:'<subdirectory>/ · {{files}} files / {{lines}} lines', k:'comp', col:0, row:0,
       child:'L3-SUB1',
-      d:'<它的职责边界>',
-      in:[  p('<入站>','<类型>','<容量>','<落点>','<理由>') ],
-      out:[ p('<出站>','<类型>','<频率>','<落点>','<理由>') ]},
+      d:'<the boundary of its responsibility>',
+      in:[  p('<inbound>','<type>','<capacity>','<landing>','<why>') ],
+      out:[ p('<outbound>','<type>','<frequency>','<landing>','<why>') ]},
   ],
   links:[],
 });
 
-/* ==================== L3 · 组件图（一张图 = 一个目录） ==================== */
+/* ==================== L3 · component (one diagram = one directory) ==================== */
 dia({
   id:'L3-SUB1', lv:3, parent:'L2-CORE',
-  title:'组件 · <子系统>（<目录> · {{files}} 文件 / {{lines}} 行）',
-  sub:'<这一组存在的共同理由>',
+  title:'Component · <subsystem> (<directory> · {{files}} files / {{lines}} lines)',
+  sub:'<the shared reason this group exists>',
   colw:258,
   blocks:[
-    { id:'A', n:'<模块>', t:'<文件名> · {{lines}} 行 · {{exports}} 导出', k:'comp', col:0, row:0,
-      d:'<设计取舍>',
-      in:[  p('<入站>','<类型>','<容量>','<落点>','<理由>') ],
-      out:[ p('<出站>','<类型>','<频率>','<落点>','<理由>') ]},
+    { id:'A', n:'<module>', t:'<filename> · {{lines}} lines · {{exports}} exports', k:'comp', col:0, row:0,
+      d:'<the design trade-off>',
+      in:[  p('<inbound>','<type>','<capacity>','<landing>','<why>') ],
+      out:[ p('<outbound>','<type>','<frequency>','<landing>','<why>') ]},
   ],
   links:[],
 });
 
-/* ==================== L4 · 代码级状态机（跨模块的一条真实链路） ==================== */
+/* ==================== L4 · code-level state machine (one real end-to-end path) ==================== */
 dia({
   id:'L4-FLOW1', lv:4, parent:'L3-SUB1',
-  title:'代码 · <一条端到端链路>',
-  sub:'<这条链路上顺序为什么不能换>',
+  title:'Code · <one end-to-end path>',
+  sub:'<why the order of the steps on this path cannot be changed>',
   colw:254,
   blocks:[
-    { id:'S1', n:'<步骤>', t:'<文件> · <函数或行号>', k:'code', col:0, row:0,
-      d:'<这一步在防什么>',
-      out:[ p('<产出>','<类型>','<频率>','<落点>','<理由>') ]},
+    { id:'S1', n:'<step>', t:'<file> · <function or line>', k:'code', col:0, row:0,
+      d:'<what this step is defending against>',
+      out:[ p('<produces>','<type>','<frequency>','<landing>','<why>') ]},
   ],
   links:[],
 });
 
-/* ==================== L4 · 文件级模块图（超大目录逐文件摊开） ==================== */
+/* ==================== L4 · file-level module map (one oversized directory, file by file) ==================== */
 dia({
   id:'L4-FILES-SUB1', lv:4, parent:'L3-SUB1',
-  title:'文件 · <目录> 逐文件（一个矩形 = 一个文件，抽屉 = 该文件的全部导出符号）',
-  sub:'按导出数量降序 —— 这是「目录 > 文件 > 类」里 **文件** 那一级的完整展开',
+  title:'Files · <directory>, file by file (one rectangle = one file, drawer = all of its exported symbols)',
+  sub:'Descending by export count — this is the **file** level of "directory > file > class", fully expanded',
   colw:214, autoCols:6,
-  autoFiles:['<目录>/*'],     // 支持 dir/* · dir/** · 精确路径
+  autoFiles:['<directory>/*'],     // supports dir/* · dir/** · exact paths
 });

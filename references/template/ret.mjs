@@ -1,14 +1,17 @@
 /**
- * 【可选，强烈建议】接口字段表：端口若是一次调用或一份结构化报文，在此列出它实际包含的数据。
- * 键 "<图id>/<块id>/out:<下标>" 或 ".../in:<下标>"，值 [字段名, 数据类型, 含义]。
- * 悬停该端口时展开。字段必须取自源码里的真实定义，不要编。
+ * OPTIONAL but strongly recommended — Interface field tables: when a port is one call or one structured
+ * message, list what it actually contains here.
+ * The key is "<diagramId>/<blockId>/out:<index>" or ".../in:<index>"; the value is
+ * [fieldName, dataType, meaning]. It expands when that port is hovered. Every field must come from a
+ * real definition in the source — do not invent them.
  *
- * 下标必须指向**真实写出来的**端口（build 与 verify 都会核）。
- * 如果那个输入端口是被连线自动合成的（目标块本身没写 in），字段表要挂到**源块的 out:N** 上 ——
- * 引擎合成时会把源端口的字段表一起带过去，两边都能悬停看到。
+ * The index must point at a port that is **actually written out** (both build and verify check this).
+ * If the input port in question is one the engine synthesized from a link (the target block declares no
+ * `in`), attach the field table to the **source block's out:N** instead — the engine carries the table
+ * across when it synthesizes, so it is visible on hover from either end.
  */
 export const RET_TABLES = {
   'L1/CORE/in:0': [
-    ['<字段>', '<真实类型>', '<含义 + 为什么是这个约束>'],
+    ['<field>', '<real type>', '<meaning + why this constraint>'],
   ],
 };

@@ -1,30 +1,32 @@
 /**
- * 【必填】矩形 → 文件集合。这是「目录 > 文件 > 类」里 **目录 → 文件** 那一层的唯一事实来源；
- * 类/函数清单由 build.mjs 顺着这张表从 inventory.json 自动展开。
+ * REQUIRED — Rectangle → set of files. This is the single source of truth for the
+ * **directory → file** level of "directory > file > class"; build.mjs expands the class/function
+ * inventory from inventory.json by following this table.
  *
- * 模式语法：
- *   'a/b/**'        该目录及其子目录全部文件
- *   'a/b/*'         仅该目录直属文件
- *   'a/b/c.ts'      精确文件
- *   'a/b/use*.ts'   目录内文件名通配
- *   '!a/b/x.ts'     排除
- *   'REST:a/b/*'    同一张图里没被别的块认领的那些（收尾块专用，放最后）
+ * Pattern syntax:
+ *   'a/b/**'        that directory and every subdirectory
+ *   'a/b/*'         only the files directly inside that directory
+ *   'a/b/c.ts'      one exact file
+ *   'a/b/use*.ts'   filename wildcard inside a directory
+ *   '!a/b/x.ts'     exclude
+ *   'REST:a/b/*'    whatever no other block in the same diagram claimed (for a catch-all block; put it last)
  *
- * 硬规则（build.mjs 强制）：
- *   - 同一张图内，一个文件只能属于一个矩形
- *   - 不同图之间可以重复（L4 文件级图本就是把 L3 的块换个角度摊开）
- *   - 全仓每个源文件至少属于一个矩形，否则构建失败
+ * Hard rules (enforced by build.mjs):
+ *   - inside one diagram, a file may belong to exactly one rectangle
+ *   - across diagrams, repetition is fine (an L4 file-level map is the same L3 blocks from another angle)
+ *   - every source file in the repository must belong to at least one rectangle, or the build fails
  *
- * 有 child 的块不用写：build.mjs 会把子图的文件聚合上来（仅文件清单）。
+ * A block with a `child` needs no entry: build.mjs aggregates the child diagram's files (inventory only).
  *
- * 这张表同时决定了 diagrams.mjs 里 {{files}} / {{lines}} / {{exports}} 的统计口径 ——
- * 改了归属，标题里的数字会自动跟着变，不需要也不应该手工同步。
+ * This table also defines what {{files}} / {{lines}} / {{exports}} count in diagrams.mjs — change an
+ * assignment and the numbers in the titles follow automatically. You neither need nor should sync them.
  *
- * 写完先核一遍，别等 build 报错：
+ * Check as you write, rather than waiting for the build to fail:
  *   node scripts/stats.mjs <workDir> 'server/src/routes/*' 'server/src/ws/*'
- * 它会打印每个模式命中的文件/行/符号数；命中 0 个会明确告警 —— 那就是一次漏覆盖。
+ * It prints the files / lines / symbols each pattern matched; a pattern matching zero files is
+ * flagged explicitly — that is a coverage hole.
  */
 export const BLOCKMAP = {
-  'L3-SUB1/A':    ['<目录>/<文件>.ts'],
-  // 'L3-SUB1/REST': ['REST:<目录>/*'],
+  'L3-SUB1/A':    ['<directory>/<file>.ts'],
+  // 'L3-SUB1/REST': ['REST:<directory>/*'],
 };

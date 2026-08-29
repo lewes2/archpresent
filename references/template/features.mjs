@@ -1,7 +1,9 @@
 /**
- * 【可选，强烈建议】L1 功能列表：用户可见的能力 → 拥有它的矩形。点一条即跳到该模块所在的图并高亮。
- * cat 建议 4~6 类，按用户心智分（而不是按代码结构分）。d 写一句「它的非显然之处」。
+ * OPTIONAL but strongly recommended — The L1 capability list: user-visible capabilities → the rectangle
+ * that owns each one. Clicking a row jumps to that module's diagram and highlights it.
+ * Aim for 4–6 categories, grouped the way a user thinks (not the way the code is organised).
+ * `d` is one line on what is non-obvious about it.
  */
 export const FEATURES = [
-  { n:'<能力>', cat:'<分类>', key:'L3-SUB1/A', d:'<非显然之处>' },
+  { n:'<capability>', cat:'<category>', key:'L3-SUB1/A', d:'<what is non-obvious about it>' },
 ];

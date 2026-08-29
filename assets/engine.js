@@ -1,4 +1,4 @@
-/* ---------------------------------------------------------------- 渲染引擎 */
+/* ---------------------------------------------------------------- rendering engine */
 const KIND = {
   person:{ f:'#123c3a', s:'#2fbfa8', t:'#d9fff7', tag:'Person'   },
   ext:   { f:'#252932', s:'#7a828f', t:'#c6ccd6', tag:'External', dash:[6,4] },
@@ -12,15 +12,15 @@ const KIND = {
   note:  { f:'#1b1e25', s:'#3c424d', t:'#9aa3ad', tag:'Note'    }
 };
 
-const LV_NAME = ['', 'L1 · 系统上下文 Context', 'L2 · 容器 Container', 'L3 · 组件 Component', 'L4 · 代码 Code'];
+const LV_NAME = ['', 'L1 · System Context', 'L2 · Container', 'L3 · Component', 'L4 · Code'];
 
 const cv = document.getElementById('cv');
 const g  = cv.getContext('2d');
-const FONT = '"Microsoft YaHei","PingFang SC",system-ui,-apple-system,"Segoe UI",sans-serif';
+const FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Microsoft YaHei","PingFang SC",sans-serif';
 let VW = 0, VH = 0, DPR = 1;
 
-const LAY   = {};                 // 布局缓存 id -> {blocks, links, bbox}
-let stack   = ['L1'];             // 导航栈
+const LAY   = {};                 // layout cache: id -> {blocks, links, bbox}
+let stack   = ['L1'];             // navigation stack
 let views   = {};                 // id -> {s, tx, ty}
 let hover   = null;               // {kind:'port'|'block'|'btn'|'crumb'|'drawer'|'feat', ...}
 let mouse   = { x:0, y:0, in:false };
@@ -29,26 +29,66 @@ let pending = false;
 
 const HIT = { btns:[], crumbs:[], feats:[], tabs:[], ctrl:[] };
 
-let panelTab = 'flow';            // 左面板页签：'flow' 典型场景 | 'feat' L1 功能列表
-let focus    = null;              // 从功能列表跳过来时高亮的矩形 {dia, block, t0}
-let featScroll = 0;               // 功能列表滚动偏移（列表比视口高，必须能滚）
+/* ------------------------------------------------------------------ edit mode
+   Two capabilities, both behind the top-right ✎ Edit button so ordinary reading is untouched:
+     · click any drawn label  → an anchored form holding that element's real text fields
+     · Ctrl+drag a rectangle  → free positioning; links re-route because layout() is simply recomputed
+   The canvas holds no text nodes, so an "editable label" is a rectangle registered during draw()
+   plus a DOM form anchored over it. Both kinds of edit persist to localStorage. */
+let editMode = false;
+const POS   = {};                 // "<diagram id>/<rect id>" -> {x,y} in normalized layout space
+const ETEXT = [];                 // per-frame editable label boxes (screen coords), topmost last
+let blockDrag = null;             // {b, key, ox, oy, sx, sy, moved}
+let editing = null;               // the open editor's descriptor
+
+/* Register a clickable label. Called from the draw functions, and only while editing.
+   `pkey` is the stable identity used to persist an edit across reloads. */
+function ereg(x, y, w, h, target, fields, focusKey, title, path, pkey){
+  if (!editMode || !target || w <= 0) return;
+  // Zoomed far out the labels collapse on top of each other and are unreadable anyway — do not
+  // offer a hit box you cannot aim at. Ctrl+drag still works at any zoom.
+  if (h < 7) return;
+  // Vertical padding stays at 1px: two stacked labels are only ~15px apart at fit zoom, and a
+  // generous hit box would make the lower one steal the upper one's clicks.
+  ETEXT.push({ x:x-3, y:y-1, w:w+6, h:h+2, target, fields, focusKey, title, path, pkey });
+}
+/* Same, for a label drawn in world coordinates (inside the panned/zoomed scene). */
+function eregW(v, wx, wy, ww, wh, target, fields, focusKey, title, path, pkey){
+  if (!editMode) return;
+  ereg(wx*v.s + v.tx, wy*v.s + v.ty, ww*v.s, wh*v.s, target, fields, focusKey, title, path, pkey);
+}
+const F_BLOCK = [ { k:'n', label:'Name' },
+                  { k:'t', label:'Subtitle · path / size' },
+                  { k:'d', label:'Description (the hover text)', ml:1 } ];
+const F_PORT  = [ { k:'n', label:'Port name' },
+                  { k:'t', label:'Data type — a real identifier' },
+                  { k:'l', label:'Size / capacity' },
+                  { k:'s', label:'Storage / landing place' },
+                  { k:'d', label:'Why — the constraint and its failure mode', ml:1 } ];
+const F_DIA   = [ { k:'title', label:'Diagram title' },
+                  { k:'sub',   label:'Subtitle', ml:1 } ];
+const F_LINK  = [ { k:'l', label:'Link label' } ];
+
+let panelTab = 'flow';            // left panel tab: 'flow' scenarios | 'feat' L1 capability list
+let focus    = null;              // rectangle highlighted after a jump from the capability list {dia, block, t0}
+let featScroll = 0;               // capability list scroll offset (the list outgrows the viewport, so it must scroll)
 
 const HEAD = 54, PITCH = 24, PADB = 12, GX = 116, GY = 44, MINH = 92;
-const FCHIP = 22, FROW = 17;      // 文件下拉：把手高度 / 每行高度
-const OPEN = new Set();           // 已展开的抽屉（键为 "<图 id>/<矩形 id>#<抽屉序号>"）
+const FCHIP = 22, FROW = 17;      // file drawer: handle height / row height
+const OPEN = new Set();           // expanded drawers (key: "<diagram id>/<rect id>#<drawer index>")
 
-/* wmux 改造 ①：抽屉视窗。src/shared/types.ts 单文件 89 个导出，全量清单不能把矩形
-   撑到几千像素高 —— 抽屉最多显示 DROWS_MAX 行，其余靠滚轮在抽屉内滚。 */
+/* Change ①: drawer viewport. A single file can export ~90 symbols; a full inventory would stretch
+   the rectangle to thousands of pixels — a drawer shows at most DROWS_MAX rows and scrolls the rest. */
 const DROWS_MAX = 26;
-const DSCROLL = {};               // 抽屉键 -> 起始行下标
+const DSCROLL = {};               // drawer key -> index of the first visible row
 const drawerView = dw => Math.min(dw.rows.length, DROWS_MAX);
 const drawerBodyH = dw => (dw.open ? drawerView(dw)*FROW + 8 : 0);
 const drawerOff = dw => Math.max(0, Math.min(dw.rows.length - drawerView(dw), DSCROLL[dw.key] | 0));
-/* wmux 改造 ②：清单行分组头。行的第 4 位是 'g' 时画成暗色文件名，不可悬停 ——
-   这样「目录 > 文件 > 类」三级在同一个抽屉里同时可见。 */
+/* Change ②: inventory group headers. When a row's 4th slot is 'g' it is drawn as a dim filename and
+   cannot be hovered — so all three levels (directory > file > class) stay visible in one drawer. */
 const isGroupRow = f => f && f[3] === 'g';
-/* 清单行的源码片段键：3837 个符号里同名者众（default / index / handle …），
-   所以键用「文件:行号」，由第 5 位携带；缺省回退到符号名。 */
+/* Source-snippet key for an inventory row: among thousands of symbols many share a name (default /
+   index / handle …), so the key is "file:line", carried in the 5th slot, falling back to the symbol name. */
 const codeOf = f => (f && (CODE[f[4]] || CODE[f[0]])) || null;
 
 const cur   = () => stack[stack.length - 1];
@@ -57,37 +97,37 @@ const view  = () => (views[cur()] || (views[cur()] = null));
 
 function requestDraw(){ if(!pending){ pending = true; requestAnimationFrame(()=>{ pending=false; draw(); }); } }
 
-/* ------------------------------------------------- 图的父子关系与跨层投影 */
-const PARENT = {};                 // 子图 id -> {dia, block}
+/* ------------------------------------------- diagram parent/child links and cross-level projection */
+const PARENT = {};                 // child diagram id -> {dia, block}
 Object.keys(D).forEach(id => D[id].blocks.forEach(b => {
   if (b.child && D[b.child] && D[b.child].lv === D[id].lv + 1 && !PARENT[b.child])
     PARENT[b.child] = { dia:id, block:b.id };
 }));
 function pathOf(id){ const p=[id]; let c=id; while (PARENT[c]){ c=PARENT[c].dia; p.unshift(c); } return p; }
-/* 把任意深度的一步投影到指定层：往上走到该图，返回它在该图里的祖先矩形 */
+/* Project a step at any depth onto a given level: walk up to that diagram, return its ancestor rectangle */
 function project(key, diaId){
   let [d, b] = key.split('/');
   for (let i = 0; d !== diaId; i++){
     const pa = PARENT[d];
-    if (!pa || i > 8) return null;          // 该步在更深的分支上，本层看不见
+    if (!pa || i > 8) return null;          // the step lives on a deeper branch, invisible at this level
     b = pa.block; d = pa.dia;
   }
   return b;
 }
 
-/* ------------------------------------------------------------ 流程播放 */
+/* ------------------------------------------------------------ flow playback */
 const MOVE_MIN = 520, MOVE_MAX = 1500, HOLD = 430, LOOP_GAP = 950, PANEL_W = 320;
-const PANEL_TAB_W = 30;            // 侧边栏收起后剩下的那条把手
+const PANEL_TAB_W = 30;            // the handle left behind when the sidebar is collapsed
 const now = () => Date.now();
-let autoDive = true;               // 「自动进入下一层」
+let autoDive = true;               // "follow the flow into the next level"
 let play = null;                   // {fi, si, dia, fromId, toId, pts, cum, len, t0, dur, phase, trail, paused}
-let playRate = 1;                  // 播放速度：0.5 / 1 / 1.5
-let lastFlow = 0;                  // 上一次播放的流程，供控制器的 ▶ 复用
-let panelOpen = true;              // 侧边栏展开 / 收起
+let playRate = 1;                  // playback speed: 0.5 / 1 / 1.5
+let lastFlow = 0;                  // the flow played last, reused by the controller's ▶
+let panelOpen = true;              // sidebar expanded / collapsed
 
 const panelW = () => (panelOpen ? PANEL_W : PANEL_TAB_W);
 
-/* 本步已过去的时间。暂停时冻结在 play.paused 那一刻；再乘上速度倍率。 */
+/* Time elapsed within this step. Frozen at play.paused while paused, then scaled by the rate. */
 const playT = () => ((play.paused || now()) - play.t0) * playRate;
 
 function startFlow(i){
@@ -107,7 +147,7 @@ function togglePause(){
 }
 
 function setRate(r){
-  if (play && !play.paused){                       // 让当前这一步的进度不跳变
+  if (play && !play.paused){                       // keep the current step's progress from jumping
     const done = playT();
     playRate = r;
     play.t0 = now() - done / playRate;
@@ -115,13 +155,13 @@ function setRate(r){
   requestDraw();
 }
 
-/* 单步定位到第 target 步（环形）。单步即暂停 —— 这是「一步一步看」该有的语义。 */
+/* Jump to step `target` (wrapping). Stepping also pauses — that is what "one step at a time" means. */
 function seekStep(target){
   if (!play) return;
   const fl = FLOWS[play.fi], n = fl.steps.length;
   let t = ((target % n) + n) % n;
 
-  // 目标步必须能落到本层的某个矩形上；落不到就朝同方向继续找
+  // The target step must land on a rectangle at this level; if it cannot, keep looking the same way
   let dia = null, B = null;
   for (let guard = 0; guard < n; guard++){
     const key = fl.steps[t].key;
@@ -132,12 +172,12 @@ function seekStep(target){
   }
   if (!B) return;
 
-  if (dia !== cur()){                              // 跟随流程换层
+  if (dia !== cur()){                              // follow the flow to another level
     beginTransition(D[dia].lv >= D[cur()].lv ? 1 : -1, 300);
     stack = pathOf(dia); fitView(dia);
   }
 
-  // 出发点：目标之前最近的、能投影到本图的那一步
+  // Starting point: the nearest earlier step that projects onto this diagram
   const L = layout(dia);
   let from = null;
   for (let i = t - 1; i >= 0; i--){
@@ -149,7 +189,7 @@ function seekStep(target){
   play.fromId = from; play.toId = B;
   play.pts = null; play.trail = [];
   play.phase = 'hold'; play.t0 = now(); play.dur = HOLD;
-  play.paused = now();                             // 停在这一步上
+  play.paused = now();                             // stop on this step
   requestDraw();
 }
 
@@ -162,7 +202,7 @@ function advance(){
   const fl = FLOWS[play.fi];
   for (let guard = 0; guard < 60; guard++){
     play.si++;
-    if (play.si >= fl.steps.length){                    // 一轮走完 → 循环
+    if (play.si >= fl.steps.length){                    // one lap finished → loop
       play.si = -1; play.fromId = null; play.toId = null; play.lastKey = null;
       play.phase = 'gap'; play.t0 = now(); play.dur = LOOP_GAP; play.trail = [];
       return;
@@ -171,24 +211,24 @@ function advance(){
     const sdia = step.key.split('/')[0];
     let dia = autoDive ? sdia : cur();
 
-    if (autoDive && dia !== cur()){                                        // 跟随流程换层
+    if (autoDive && dia !== cur()){                                        // follow the flow to another level
       beginTransition(D[dia].lv >= D[cur()].lv ? 1 : -1, 300);
       stack = pathOf(dia); fitView(dia);
     }
 
     const B = project(step.key, dia);
-    if (!B) continue;                                   // 这一步在更深层，本层无对应矩形
+    if (!B) continue;                                   // this step is deeper; no rectangle for it here
     const L = layout(dia);
     if (!L.byId[B]) continue;
 
-    // 上一步在本图里的落点：同图取自身，上溯取祖先矩形，取不到（刚下钻）则淡入
+    // Where the previous step landed in this diagram: itself if same diagram, else its ancestor; if neither (just drilled in), fade in
     let from = play.lastKey ? project(play.lastKey, dia) : null;
     if (from && !L.byId[from]) from = null;
 
     play.dia = dia; play.lastKey = step.key;
     play.fromId = from; play.toId = B;
 
-    if (!from || from === B){                           // 原地停留：只更新步骤文案
+    if (!from || from === B){                           // staying put: only refresh the step caption
       play.pts = null; play.phase = 'hold'; play.t0 = now(); play.dur = HOLD;
     } else {
       const r = buildRoute(dia, from, B);
@@ -208,8 +248,8 @@ function updatePlay(){
   else advance();
 }
 
-/* 两个矩形之间的走线：优先沿已有连线，否则正交兜底；两端各延伸到矩形中心，
-   于是小圆点是「穿过模块 → 沿连线 → 进入下一个模块」 */
+/* Routing between two rectangles: follow an existing link when there is one, else fall back to orthogonal;
+   both ends extend to the rectangle centre, so the dot reads as "through the module → along the link → into the next" */
 function buildRoute(diaId, aId, bId){
   const L = layout(diaId), A = L.byId[aId], B = L.byId[bId];
   const ac = { x:A.x+A.w/2, y:A.y+A.h/2 }, bc = { x:B.x+B.w/2, y:B.y+B.h/2 };
@@ -249,7 +289,7 @@ function pointAt(pts, cum, d){
   }
   const l = pts[pts.length-1]; return { x:l.x, y:l.y };
 }
-/* 步骤悬浮注释（DOM 层，唯一不画在 canvas 上的东西 —— 为的是拿到 CSS 过渡） */
+/* Step caption overlay (DOM layer — the one thing not drawn on canvas, so that it can use CSS transitions) */
 const cap     = document.getElementById('cap');
 const capMeta = document.getElementById('capMeta');
 const capText = document.getElementById('capText');
@@ -257,7 +297,7 @@ const capMod  = document.getElementById('capMod');
 let capKey = null, capTimer = null;
 
 function setCaption(){
-  if (!play || play.si < 0){                       // 无播放/循环间隙 → 下沉淡出
+  if (!play || play.si < 0){                       // nothing playing / between laps → sink and fade out
     if (capKey !== null){ capKey = null; cap.className = ''; }
     return;
   }
@@ -269,12 +309,12 @@ function setCaption(){
   const [sdia, sbid] = st.key.split('/');
   const blk = D[sdia].blocks.find(b => b.id === sbid);
 
-  cap.className = 'out';                           // 先淡出，再换字上浮
+  cap.className = 'out';                           // fade out first, then swap the text and float it up
   cap.style.left = ((play || cur() === 'L1') ? panelW() + 44 : 40) + 'px';
   if (capTimer) clearTimeout(capTimer);
   capTimer = setTimeout(() => {
     if (capKey !== k) return;
-    capMeta.textContent = '第 ' + (play.si+1) + ' / ' + fl.steps.length + ' 步   ·   L'
+    capMeta.textContent = 'step ' + (play.si+1) + ' / ' + fl.steps.length + '   ·   L'
                         + D[sdia].lv + '   ·   ' + D[sdia].title;
     capText.textContent = st.t;
     capMod.textContent  = blk ? '▸ ' + blk.n + (blk.t ? '   ·   ' + blk.t : '') : '';
@@ -291,7 +331,7 @@ function dotPos(){
   return pointAt(play.pts, play.cum, e * play.len);
 }
 
-/* ------------------------------------------------------------------ 布局 */
+/* ------------------------------------------------------------------ layout */
 function layout(id){
   if (LAY[id]) return LAY[id];
   const d = D[id];
@@ -299,13 +339,13 @@ function layout(id){
   const raw = {};
   const wrapped = d.blocks.map((b, i) => {
     const key = d.id + '/' + b.id;
-    /* 抽屉：同一套把手/行渲染，喂两种内容 —— 文件清单与内部类/对象。
-       行的三元组是 [主文本, 右侧计量, 补充说明]，两种抽屉共用。 */
+    /* Drawers: one handle/row renderer fed two kinds of content — the file inventory and the internal
+       classes/objects. A row is [main text, right-hand metric, note], shared by both kinds. */
     const drawers = [];
     const fl = b.f || FILES[key] || FILES[d.id + '/*'] || null;
-    if (fl && fl.length) drawers.push({ label:'文件清单', kind:'file', rows:fl, open:OPEN.has(key + '#0') });
+    if (fl && fl.length) drawers.push({ label:'Files', kind:'file', rows:fl, open:OPEN.has(key + '#0') });
     const cl = b.c || CLS[key] || null;
-    if (cl && cl.length) drawers.push({ label:'内部类 / 对象', kind:'cls', rows:cl, open:OPEN.has(key + '#' + drawers.length) });
+    if (cl && cl.length) drawers.push({ label:'Classes / objects', kind:'cls', rows:cl, open:OPEN.has(key + '#' + drawers.length) });
     drawers.forEach((dw, di) => { dw.di = di; dw.key = key + '#' + di; dw.open = OPEN.has(dw.key); });
     const bb = {
       ref:b, id:b.id, n:b.n, t:b.t, k:b.k || 'comp', d:b.d, child:b.child,
@@ -318,11 +358,11 @@ function layout(id){
     return bb;
   });
 
-  /* 信号语义补齐：一条信号线只有一个载荷，目标块未显式声明该输入端口时，
-     按上游输出端口的属性推导出对应的输入端口（数据类型/长度/储存表相同）。 */
+  /* Completing signal semantics: a signal line carries exactly one payload, so when the target block does
+     not declare that input port, derive it from the upstream output port (same type / size / storage). */
   const synth = {};
   const edges = [];
-  (d.links||[]).forEach(L => {
+  (d.links||[]).forEach((L, li) => {
     const sb = raw[L.s[0]], tb = raw[L.t[0]];
     if (!sb || !tb) return;
     const sp = sb.out[L.s[1]];
@@ -331,22 +371,23 @@ function layout(id){
     if (!tb.in[ti]){
       const key = L.t[0] + ':' + ti;
       if (synth[key] === undefined){
-        tb.in.push({ n:sp.n, t:sp.t, l:sp.l, s:sp.s, d:sp.d, derived:true,
+        // `src` points back at the port this one was derived from, so editing it edits the real port
+        tb.in.push({ n:sp.n, t:sp.t, l:sp.l, s:sp.s, d:sp.d, derived:true, src:sp,
                      ret: RET[d.id + '/' + L.s[0] + '/out:' + L.s[1]] || null });
         synth[key] = tb.in.length - 1;
       }
       ti = synth[key];
     }
-    edges.push({ sb, tb, sp, ti, l:L.l });
+    edges.push({ sb, tb, sp, ti, l:L.l, ref:L, li });
   });
 
   const cols = {};
   wrapped.forEach(bb => {
     const n = Math.max(bb.in.length, bb.out.length);
-    bb.portsH = Math.max(MINH, HEAD + n*PITCH + PADB);          // 端口区高度（下拉把手落在其下沿）
+    bb.portsH = Math.max(MINH, HEAD + n*PITCH + PADB);          // port area height (drawer handles sit below it)
     bb.h = bb.portsH + bb.drawers.reduce(
       (s, dw) => s + FCHIP + drawerBodyH(dw), 0);
-    // 只有一侧有端口时，标签可以用整块宽度
+    // With ports on one side only, the label may use the block's full width
     bb.lw = (bb.in.length && bb.out.length) ? colw/2 - 18 : colw - 34;
     (cols[bb.col] || (cols[bb.col]=[])).push(bb);
   });
@@ -360,23 +401,34 @@ function layout(id){
     arr.forEach(b => { b.x = c*(colw+GX); b.y = y; y += b.h + GY; blocks.push(b); });
   });
 
-  // 归一化到 (0,0)
-  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
-  blocks.forEach(b=>{ minX=Math.min(minX,b.x); minY=Math.min(minY,b.y); maxX=Math.max(maxX,b.x+b.w); maxY=Math.max(maxY,b.y+b.h); });
+  // normalize the grid to (0,0)
+  let minX=1e9,minY=1e9;
+  blocks.forEach(b=>{ minX=Math.min(minX,b.x); minY=Math.min(minY,b.y); });
   blocks.forEach(b=>{ b.x-=minX; b.y-=minY; });
-  const bbox = { w:maxX-minX, h:maxY-minY };
 
-  // 端口坐标
+  /* Edit mode: a rectangle moved with Ctrl+drag overrides its grid slot. The override is stored in this
+     normalized space, so it stays put when an unrelated drawer opens and reflows the rest of the grid. */
+  blocks.forEach(b => { const o = POS[d.id + '/' + b.id]; if (o){ b.x = o.x; b.y = o.y; } });
+
+  // The bbox carries an origin, because a dragged rectangle may end up left of / above the grid
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  blocks.forEach(b=>{ x0=Math.min(x0,b.x); y0=Math.min(y0,b.y);
+                      x1=Math.max(x1,b.x+b.w); y1=Math.max(y1,b.y+b.h); });
+  const bbox = { x:x0, y:y0, w:x1-x0, h:y1-y0 };
+
+  // port coordinates
   const byId = {};
   blocks.forEach(b => {
     byId[b.id] = b;
     b.in.forEach((pt,i)=>{ pt.x=b.x; pt.y=b.y+HEAD+PITCH*i+PITCH/2; pt.dir='in'; pt.owner=b;
+                           pt.pkey = pt.pkey || d.id + '/' + b.id + '/in:' + i;
                            pt.ret = pt.ret || RET[d.id + '/' + b.id + '/in:' + i] || null; });
     b.out.forEach((pt,i)=>{ pt.x=b.x+b.w; pt.y=b.y+HEAD+PITCH*i+PITCH/2; pt.dir='out'; pt.owner=b;
+                            pt.pkey = pt.pkey || d.id + '/' + b.id + '/out:' + i;
                             pt.ret = RET[d.id + '/' + b.id + '/out:' + i] || null; });
   });
 
-  // 连线路由
+  // link routing
   const links = [];
   let lane = 0;
   edges.forEach(E => {
@@ -393,13 +445,13 @@ function layout(id){
       const yb = Math.max(sb.y+sb.h, tb.y+tb.h) + off;
       pts = [[x1,y1],[x1+22,y1],[x1+22,yb],[x2-22,yb],[x2-22,y2],[x2,y2]];
     }
-    links.push({ pts, l:E.l, s:sb, t:tb, sp, tp });
+    links.push({ pts, l:E.l, ref:E.ref, li:E.li, s:sb, t:tb, sp, tp });
   });
 
   return (LAY[id] = { blocks, links, bbox, byId });
 }
 
-/* ------------------------------------------------------------------ 工具 */
+/* ------------------------------------------------------------------ utilities */
 function rr(x,y,w,h,r){
   g.beginPath();
   g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r);
@@ -428,18 +480,19 @@ function s2w(x,y){ const v = views[cur()]; return { x:(x-v.tx)/v.s, y:(y-v.ty)/v
 function fitView(id){
   const L = layout(id);
   const padT = 118, padB = 74, padR = 44;
-  const padL = (play || id === 'L1') ? panelW() + 44 : 44;   // 给流程面板让位
+  const padL = (play || id === 'L1') ? panelW() + 44 : 44;   // leave room for the flow panel
   const s = Math.min((VW-padL-padR)/Math.max(1,L.bbox.w), (VH-padT-padB)/Math.max(1,L.bbox.h), 1.25);
   const sc = Math.max(0.22, s);
   views[id] = { s:sc,
-                tx: padL + (VW-padL-padR - L.bbox.w*sc)/2,
-                ty: padT + (VH-padT-padB - L.bbox.h*sc)/2 };
+                tx: padL + (VW-padL-padR - L.bbox.w*sc)/2 - L.bbox.x*sc,
+                ty: padT + (VH-padT-padB - L.bbox.h*sc)/2 - L.bbox.y*sc };
 }
 
-/* ------------------------------------------------------------------ 绘制 */
+/* ------------------------------------------------------------------ drawing */
 function draw(){
   if (play) updatePlay();
   setCaption();
+  ETEXT.length = 0;                              // editable label boxes are rebuilt every frame
   const id = cur(), d = D[id], L = layout(id);
   if (!views[id]) fitView(id);
   const v = views[id];
@@ -459,15 +512,15 @@ function draw(){
   drawPlayControls();
   drawLegend(d, L);
   if (hover && TIP_KINDS.has(hover.kind)) drawTip();
-  if (trans) drawTransition();                   // 转场快照盖在最上层
-  if ((play && !play.paused) || trans) requestDraw();   // 暂停时不空转 rAF
+  if (trans) drawTransition();                   // the transition snapshot goes on top
+  if ((play && !play.paused) || trans) requestDraw();   // do not spin rAF while paused
 }
 
-/* 发光小圆点 + 拖尾 + 活动模块高亮（世界坐标） */
+/* Glowing dot + trail + active-module highlight (world coordinates) */
 function drawFlow(L, v){
   const to = L.byId[play.toId], from = play.fromId ? L.byId[play.fromId] : null;
 
-  // 本步走线：先铺一条暗底，再叠已走过的高亮段
+  // This step's route: lay a dim base first, then overlay the segments already travelled
   if (play.phase === 'move' && play.pts){
     g.lineWidth = 2.2; g.lineJoin = 'round'; g.lineCap = 'round';
     g.strokeStyle = 'rgba(125,211,252,.16)';
@@ -476,7 +529,7 @@ function drawFlow(L, v){
     g.stroke();
   }
 
-  // 活动模块：呼吸光晕
+  // Active module: breathing halo
   [ [from, .35], [to, 1] ].forEach(([b, a]) => {
     if (!b) return;
     const pulse = b === to && play.phase === 'hold'
@@ -492,7 +545,7 @@ function drawFlow(L, v){
   const p = dotPos();
   if (!p) return;
 
-  // 拖尾
+  // Trail
   play.trail.push({ x:p.x, y:p.y });
   if (play.trail.length > 16) play.trail.shift();
   for (let i = 0; i < play.trail.length-1; i++){
@@ -501,7 +554,7 @@ function drawFlow(L, v){
     g.beginPath(); g.arc(t.x, t.y, 2 + 4*a, 0, Math.PI*2); g.fill();
   }
 
-  // 圆点本体：外晕 + 实心 + 高光
+  // The dot itself: outer glow + solid core + specular
   const rad = 7.5;
   const grd = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad*3.4);
   grd.addColorStop(0,   'rgba(186,236,255,.95)');
@@ -539,7 +592,7 @@ function drawLink(k, v){
   for (let i=1;i<k.pts.length;i++) g.lineTo(k.pts[i][0], k.pts[i][1]);
   g.stroke();
 
-  // 箭头
+  // Arrow
   const a = k.pts[k.pts.length-2], b = k.pts[k.pts.length-1];
   const ang = Math.atan2(b[1]-a[1], b[0]-a[0]);
   g.fillStyle = hot ? '#7dd3fc' : '#4b5666';
@@ -558,6 +611,8 @@ function drawLink(k, v){
     g.fillStyle = hot ? '#a5e4ff' : '#67748a';
     g.textAlign='center'; g.textBaseline='middle';
     g.fillText(k.l, cx, cy);
+    eregW(v, cx-w/2, cy-8, w, 16, k.ref, F_LINK, 'l',
+          'Link label', k.s.id + ' → ' + k.t.id, 'K:' + cur() + '/' + k.li);
   }
 }
 
@@ -565,7 +620,7 @@ function drawBlock(b, v){
   const K = KIND[b.k] || KIND.comp;
   const isHover = hover && hover.b === b;
 
-  // 从 L1 功能列表跳过来的目标块：呼吸一圈青色，6 秒后自然消退
+  // Block jumped to from the L1 capability list: breathe a cyan ring, fading out after 6 seconds
   if (focus && focus.dia === cur() && focus.block === b.id){
     const age = now() - focus.t0;
     if (age > 6000) focus = null;
@@ -591,35 +646,52 @@ function drawBlock(b, v){
   g.setLineDash([]);
   g.restore();
 
-  // 顶部标签条
+  // Top label bar
   g.font = '9.5px ' + FONT; g.textBaseline = 'middle'; g.textAlign = 'left';
   g.fillStyle = K.s; g.globalAlpha = .85;
   g.fillText(K.tag, b.x+12, b.y+13);
   g.globalAlpha = 1;
   if (b.child){
     g.textAlign = 'right'; g.fillStyle = '#8ea0b8';
-    g.fillText('下钻 ▸', b.x+b.w-12, b.y+13);
+    g.fillText('open ▸', b.x+b.w-12, b.y+13);
   }
 
-  // 名称 / 技术
+  // Name / technology
   g.textAlign = 'left';
   g.font = 'bold 14px ' + FONT; g.fillStyle = K.t;
-  g.fillText(fit(b.n, b.w-24), b.x+12, b.y+31);
+  const nTxt = fit(b.n, b.w-24);
+  g.fillText(nTxt, b.x+12, b.y+31);
+  eregW(v, b.x+12, b.y+31-9, Math.max(40, g.measureText(nTxt).width), 18,
+        b.ref, F_BLOCK, 'n', 'Rectangle', cur() + ' / ' + b.id, 'B:' + cur() + '/' + b.id);
   g.font = '10.5px ' + FONT; g.fillStyle = '#8b95a5';
-  g.fillText(fit(b.t||'', b.w-24), b.x+12, b.y+46);
+  const tTxt = fit(b.t||'', b.w-24);
+  g.fillText(tTxt, b.x+12, b.y+46);
+  eregW(v, b.x+12, b.y+46-7, Math.max(40, g.measureText(tTxt).width), 14,
+        b.ref, F_BLOCK, 't', 'Rectangle', cur() + ' / ' + b.id, 'B:' + cur() + '/' + b.id);
 
-  // 分隔
+  // Divider
   g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1;
   g.beginPath(); g.moveTo(b.x+8, b.y+HEAD-6); g.lineTo(b.x+b.w-8, b.y+HEAD-6); g.stroke();
 
-  // 端口
-  b.in.forEach(pt => drawPort(pt, b, b.lw, true));
-  b.out.forEach(pt => drawPort(pt, b, b.lw, false));
+  // Ports
+  b.in.forEach(pt => drawPort(pt, b, b.lw, true, v));
+  b.out.forEach(pt => drawPort(pt, b, b.lw, false, v));
 
   drawDrawers(b, K);
+
+  // Edit mode: a dashed ring makes it obvious the rectangle can be picked up with Ctrl
+  if (editMode){
+    const grabbing = blockDrag && blockDrag.b === b;
+    g.save();
+    g.setLineDash([5, 4]);
+    g.lineWidth = grabbing ? 2 : 1.1;
+    g.strokeStyle = grabbing ? 'rgba(125,211,252,.95)' : 'rgba(125,211,252,.42)';
+    rr(b.x-4, b.y-4, b.w+8, b.h+8, 11); g.stroke();
+    g.restore();
+  }
 }
 
-/* 抽屉的把手 y 坐标：portsH 之下，按前面抽屉的实际高度依次下移 */
+/* Drawer handle y coordinate: below portsH, shifted down by the real height of each preceding drawer */
 function drawerTop(b, di){
   let y = b.y + b.portsH;
   for (let i = 0; i < di; i++){
@@ -628,7 +700,7 @@ function drawerTop(b, di){
   return y;
 }
 
-/* 下拉抽屉：把手 + 展开后的行。文件清单与内部类/对象共用同一套渲染。 */
+/* Drop-down drawer: handle plus rows once expanded. Files and classes/objects share this renderer. */
 function drawDrawers(b, K){
   b.drawers.forEach((dw, di) => {
     const y = drawerTop(b, di);
@@ -650,17 +722,17 @@ function drawDrawers(b, K){
     g.fillText((dw.open ? '▴ ' : '▾ ') + counter, b.x+16, y+FCHIP/2+1);
     g.textAlign = 'right';
     g.fillStyle = onChip ? '#9fb2c9' : '#5f6b7c';
-    g.fillText(dw.open ? '收起' : '展开', b.x+b.w-16, y+FCHIP/2+1);
+    g.fillText(dw.open ? 'hide' : 'show', b.x+b.w-16, y+FCHIP/2+1);
 
     if (!dw.open) return;
 
-    const sbw = scrollable ? 5 : 0;            // 滚动条占的右侧宽度
+    const sbw = scrollable ? 5 : 0;            // width taken by the scrollbar on the right
     let fy = y + FCHIP + 4;
     for (let i = off; i < off + vis; i++){
       const f = dw.rows[i];
       if (!f) break;
 
-      // 分组头：一个文件名，暗色小字 + 一条细分隔线，不参与悬停
+      // Group header: a filename in dim small type plus a hairline rule; not hoverable
       if (isGroupRow(f)){
         g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1;
         g.beginPath(); g.moveTo(b.x+14, fy+FROW-1.5); g.lineTo(b.x+b.w-14-sbw, fy+FROW-1.5); g.stroke();
@@ -679,12 +751,12 @@ function drawDrawers(b, K){
       if (on){ g.fillStyle = 'rgba(255,255,255,.09)'; rr(b.x+8, fy, b.w-16-sbw, FROW, 3); g.fill(); }
 
       const meta = f[1] === '' || f[1] === undefined ? ''
-                 : (typeof f[1] === 'number' ? f[1] + ' 行' : String(f[1]));
+                 : (typeof f[1] === 'number' ? f[1] + ' lines' : String(f[1]));
       g.font = '10px ' + FONT;
       const mw = meta ? g.measureText(meta).width + 10 : 0;
       const maxw = b.w - 32 - mw - sbw;
 
-      // 文件行：目录暗、文件名亮；类行：整体一段，有定义片段的挂个 ‹› 记号
+      // File rows: dim directory, bright filename. Class rows: one run, with a ‹› mark when a snippet exists
       const txt = (dw.kind === 'cls' && codeOf(f)) ? '‹› ' + f[0] : f[0];
       const cut = dw.kind === 'file' ? txt.lastIndexOf('/') + 1 : 0;
       const dir = txt.slice(0, cut), base = txt.slice(cut);
@@ -716,7 +788,7 @@ function drawDrawers(b, K){
   });
 }
 
-function drawPort(pt, b, half, isIn){
+function drawPort(pt, b, half, isIn, v){
   const on = hover && hover.p === pt;
   const col = isIn ? '#5eead4' : '#fbbf24';
   g.fillStyle = on ? '#ffffff' : col;
@@ -737,8 +809,14 @@ function drawPort(pt, b, half, isIn){
   const lw = g.measureText(label).width;
   if (isIn){ g.textAlign='left';  g.fillText(label, pt.x+8, pt.y); }
   else     { g.textAlign='right'; g.fillText(label, pt.x-8, pt.y); }
+  // A derived input port is rebuilt by layout() every frame — edit the port it was derived from
+  const ept = pt.src || pt;
+  eregW(v, isIn ? pt.x+8 : pt.x-8-lw, pt.y-9, Math.max(36, lw), 18,
+        ept, F_PORT, 'n',
+        (isIn ? 'Input port' : 'Output port') + (pt.src ? ' (derived — edits the source port)' : ''),
+        cur() + ' / ' + b.id, 'P:' + ept.pkey);
 
-  // ƒ：该端口有结构化字段表（接口对象的字段名/类型/含义），悬停可展开
+  // ƒ: this port has a structured field table (the interface object's field names/types/meaning); hover expands it
   if (pt.ret){
     g.font = 'italic bold 10px ' + FONT;
     g.fillStyle = on ? '#ffd479' : '#b8862f';
@@ -747,7 +825,7 @@ function drawPort(pt, b, half, isIn){
   }
 }
 
-/* ---------------------------------------------------------------- 顶栏 */
+/* ---------------------------------------------------------------- top bar */
 function drawHeader(d){
   HIT.btns = []; HIT.crumbs = [];
   const grd = g.createLinearGradient(0,0,0,104);
@@ -758,11 +836,17 @@ function drawHeader(d){
 
   g.textBaseline = 'middle'; g.textAlign = 'left';
   g.font = 'bold 17px ' + FONT; g.fillStyle = '#e8eef7';
-  g.fillText('豆喵 · ' + d.title, 24, 26);
+  const hTitle = 'archpresent · ' + d.title;
+  g.fillText(hTitle, 24, 26);
+  // The prefix is fixed chrome; only the diagram's own title is editable, so skip past it
+  const pfxW = g.measureText('archpresent · ').width;
+  ereg(24 + pfxW, 26-10, g.measureText(hTitle).width - pfxW, 20, d, F_DIA, 'title', 'Diagram', d.id, 'D:' + d.id);
   g.font = '11.5px ' + FONT; g.fillStyle = '#7f8b9c';
-  g.fillText(fit(d.sub || '', VW-560), 24, 47);
+  const hSub = fit(d.sub || '', VW-560);
+  g.fillText(hSub, 24, 47);
+  ereg(24, 47-8, Math.max(60, g.measureText(hSub).width), 16, d, F_DIA, 'sub', 'Diagram', d.id, 'D:' + d.id);
 
-  // 面包屑
+  // Breadcrumb
   let x = 24;
   stack.forEach((sid, i) => {
     const dd = D[sid], label = 'L'+dd.lv+' ' + dd.title;
@@ -780,39 +864,49 @@ function drawHeader(d){
     if (i < stack.length-1){ g.fillStyle='#4a5464'; g.fillText('›', x, 80); x += 12; }
   });
 
-  // 按钮
+  // Buttons — the last entry is the right-most, so Edit sits in the top-right corner
   const btns = [
-    { id:'back', label:'◀ 返回上层', on: stack.length>1 },
-    { id:'fit',  label:'⤢ 适应窗口', on:true },
-    { id:'top',  label:'⌂ 回到 L1',  on: stack.length>1 }
+    { id:'back', label:'◀ Back', on: stack.length>1 },
+    { id:'fit',  label:'⤢ Fit', on:true },
+    { id:'top',  label:'⌂ Top (L1)',  on: stack.length>1 },
+    { id:'reset',label:'↺ Reset layout', on: editMode && Object.keys(POS).length>0 },
+    { id:'edit', label: editMode ? '✓ Done' : '✎ Edit', on:true, active: editMode }
   ];
   let bx = VW - 24;
   for (let i = btns.length-1; i >= 0; i--){
     const b = btns[i];
+    if (b.id === 'reset' && !b.on) continue;          // only offered once something has been moved
     g.font = '11.5px ' + FONT;
     const w = g.measureText(b.label).width + 22;
     bx -= w;
     const on = hover && hover.kind==='btn' && hover.id===b.id;
-    g.fillStyle = !b.on ? '#161a21' : (on ? '#2a3446' : '#1d232c');
+    g.fillStyle = !b.on ? '#161a21' : b.active ? '#1d3a5c' : (on ? '#2a3446' : '#1d232c');
     rr(bx, 16, w, 26, 6); g.fill();
-    g.strokeStyle = !b.on ? '#242a33' : (on ? '#5b8ff9' : '#333c48');
+    g.strokeStyle = !b.on ? '#242a33' : b.active ? '#4b8bf5' : (on ? '#5b8ff9' : '#333c48');
     rr(bx, 16, w, 26, 6); g.stroke();
-    g.fillStyle = !b.on ? '#454e5b' : (on ? '#dce9ff' : '#a7b3c4');
+    g.fillStyle = !b.on ? '#454e5b' : b.active ? '#cfe3ff' : (on ? '#dce9ff' : '#a7b3c4');
     g.textAlign='center'; g.fillText(b.label, bx+w/2, 29);
     if (b.on) HIT.btns.push({ x:bx, y:16, w, h:26, id:b.id });
     bx -= 8;
   }
+
+  if (editMode){
+    const msg = 'EDIT MODE · click any label to rewrite it · Ctrl+drag a rectangle to move it (links re-route)';
+    g.font = '11px ' + FONT; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.fillStyle = '#7dd3fc';
+    g.fillText(msg, VW-24, 55);
+  }
 }
 
-/* ------------------------------------------------------------ 流程面板 */
+/* ------------------------------------------------------------ flow panel */
 function drawFlowPanel(){
   HIT.flows = []; HIT.chk = null; HIT.stop = null; HIT.panel = null;
   HIT.feats = []; HIT.tabs = []; HIT.featBox = null; HIT.panelToggle = null;
-  if (!play && cur() !== 'L1') return;            // 常驻 L1；播放期间跟着走
+  if (!play && cur() !== 'L1') return;            // always present at L1; follows along during playback
 
   const x = 20, y = 116;
 
-  /* ---- 收起态：只留一条竖把手 ---- */
+  /* ---- collapsed: only a vertical handle remains ---- */
   if (!panelOpen){
     const th = 132, hot = hover && hover.kind === 'panelToggle';
     frostedPanel(x, y, PANEL_TAB_W, th, 10);
@@ -823,7 +917,7 @@ function drawFlowPanel(){
     g.translate(x + PANEL_TAB_W/2, y + th/2 + 12);
     g.rotate(Math.PI/2);
     g.font = '11px ' + FONT; g.fillStyle = hot ? '#cfe0f5' : '#7f8d9f';
-    g.fillText(play ? '播放中 · 展开' : '流程 / 功能', 0, 0);
+    g.fillText(play ? 'playing · expand' : 'Flows / Features', 0, 0);
     g.restore();
     g.textAlign = 'left';
     HIT.panelToggle = { x, y, w:PANEL_TAB_W, h:th };
@@ -831,12 +925,12 @@ function drawFlowPanel(){
   }
 
   const w = PANEL_W;
-  const tab = play ? 'flow' : panelTab;           // 播放期间强制显示流程
+  const tab = play ? 'flow' : panelTab;           // force the flow tab during playback
 
-  // 面板高度：两个 tab 的内容高度不同
+  // Panel height: the two tabs have different content heights
   const ROW = 38;
   const stepBox = play ? 62 : 0;
-  // 功能列表比视口高，面板高度封顶到可视区，内部滚动
+  // The capability list outgrows the viewport, so cap the panel height and scroll inside it
   const featAvail = Math.max(160, VH - 116 - 86);
   const h = tab === 'flow'
     ? 34 + 28 + FLOWS.length*ROW + stepBox + 12
@@ -846,10 +940,10 @@ function drawFlowPanel(){
   g.strokeStyle = '#252c37'; g.lineWidth = 1; rr(x, y, w, h, 10); g.stroke();
   HIT.panel = { x, y, w, h };
 
-  // ---- 顶部两个 tab + 折叠按钮 ----
+  // ---- two tabs at the top + a collapse button ----
   g.textBaseline = 'middle'; g.textAlign = 'center';
-  const CBW = 26;                                          // 折叠按钮
-  const TABS = [['flow', '典型场景 · 数据流'], ['feat', 'L1 功能列表 ' + FEATURES.length]];
+  const CBW = 26;                                          // collapse button
+  const TABS = [['flow', 'User Story'], ['feat', 'L1 Features ' + FEATURES.length]];
   const tw = (w - 28 - CBW - 6) / 2;
   TABS.forEach(([id, label], i) => {
     const tx = x + 14 + i*tw, ty = y + 8, on = tab === id;
@@ -877,7 +971,7 @@ function drawFlowPanel(){
 
   if (tab === 'feat'){ drawFeatureList(x, y + 42, w, Math.min(featPanelH(), featAvail)); return; }
 
-  // 勾选框
+  // Checkbox
   const cy = y + 52;
   const onChk = hover && hover.kind === 'chk';
   g.fillStyle = onChk ? 'rgba(255,255,255,.07)' : 'transparent';
@@ -890,10 +984,10 @@ function drawFlowPanel(){
     g.lineCap = 'butt';
   }
   g.font = '11px ' + FONT; g.fillStyle = autoDive ? '#cfe0f5' : '#8b96a6';
-  g.fillText('自动进入下一层（跟随流程下钻 / 返回）', x+35, cy);
+  g.fillText('Follow the flow across levels (deep dive mode)', x+35, cy);
   HIT.chk = { x:x+10, y:cy-11, w:w-20, h:22 };
 
-  // 流程列表
+  // Flow list
   let ry = y + 70;
   FLOWS.forEach((f, i) => {
     const active = play && play.fi === i;
@@ -914,8 +1008,8 @@ function drawFlowPanel(){
     g.fillText(fit(f.name, w-64), x+34, ry+13);
     g.font = '9.5px ' + FONT; g.fillStyle = active ? '#7f93ad' : '#5c6674';
     g.fillText(fit(f.from + ' · ' + f.role, w-52), x+34, ry+26);
-    g.font = '10px ' + FONT; g.fillStyle = '#4d5765'; g.textAlign = 'right';
-    g.fillText(f.steps.length + ' 步', x+w-16, ry+13);
+    g.font = '10px ' + FONT; g.fillStyle = '#ffeec0'; g.textAlign = 'right';
+    g.fillText(f.steps.length + ' steps', x+w-16, ry+13);
     g.textAlign = 'left';
     HIT.flows.push({ x:x+8, y:ry, w:w-16, h:ROW-4, i });
     ry += ROW;
@@ -923,7 +1017,7 @@ function drawFlowPanel(){
 
   if (!play) return;
 
-  // 当前步骤 + 进度
+  // Current step + progress
   const fl = FLOWS[play.fi], st = play.si >= 0 ? fl.steps[play.si] : null;
   const by = ry + 4;
   g.fillStyle = 'rgba(125,211,252,.07)'; rr(x+8, by, w-16, 54, 6); g.fill();
@@ -933,11 +1027,11 @@ function drawFlowPanel(){
   g.fillStyle = '#7dd3fc'; rr(x+14, by+8, (w-28)*prog, 3, 1.5); g.fill();
 
   g.font = '10px ' + FONT; g.fillStyle = '#7dd3fc';
-  g.fillText(play.si >= 0 ? ('第 ' + (play.si+1) + ' / ' + fl.steps.length + ' 步') : '循环中…', x+14, by+24);
+  g.fillText(play.si >= 0 ? ('step ' + (play.si+1) + ' / ' + fl.steps.length) : 'looping…', x+14, by+24);
   g.textAlign = 'right';
   const onStop = hover && hover.kind === 'stop';
   g.fillStyle = onStop ? '#ffd0d0' : '#8b96a6';
-  g.fillText('■ 停止', x+w-14, by+24);
+  g.fillText('■ Stop', x+w-14, by+24);
   HIT.stop = { x:x+w-60, y:by+14, w:50, h:20 };
   g.textAlign = 'left';
 
@@ -953,10 +1047,10 @@ function drawFlowPanel(){
   }
 }
 
-/* ------------------------------------------------- L1 功能列表（左面板 tab 2） */
+/* ------------------------------------------------- L1 capability list (left panel, tab 2) */
 const FEAT_ROW = 27, FEAT_CAT = 22;
 
-/* 功能按分类折叠成 [分类名, [功能下标…]] 的有序数组 */
+/* Features folded by category into an ordered array of [category, [feature indices…]] */
 function featGroups(){
   const order = [], byCat = {};
   FEATURES.forEach((f, i) => {
@@ -1007,7 +1101,7 @@ function drawFeatureList(x, y, w, viewH){
       g.fillStyle = on ? '#7dd3fc' : '#4d5765';
       g.fillText(cd ? 'L' + cd.lv : '—', x+w-16, ry+9);
       g.textAlign = 'left';
-      // 只有落在可视带内的行才参与命中，否则裁掉的部分也会被点到
+      // Only rows inside the visible band take hits; otherwise the clipped part stays clickable
       if (ry + FEAT_ROW > y && ry < y + viewH)
         HIT.feats.push({ x:x+8, y:ry, w:w-16, h:FEAT_ROW-3, i });
       ry += FEAT_ROW;
@@ -1016,7 +1110,7 @@ function drawFeatureList(x, y, w, viewH){
 
   g.restore();
 
-  // 滚动条：只有内容确实超出时才画
+  // Scrollbar: drawn only when the content really overflows
   if (maxScroll > 0){
     const trackH = viewH - 8;
     const thumbH = Math.max(28, trackH * viewH / total);
@@ -1026,10 +1120,10 @@ function drawFeatureList(x, y, w, viewH){
   }
 }
 
-/* ------------------------------------------------- 播放控制器（左下角常驻） */
+/* ------------------------------------------------- playback controller (bottom left, always on) */
 const RATES = [0.5, 1, 1.5];
 
-/* 磨砂玻璃底板：canvas 没有 backdrop-filter，用「叠层半透 + 顶部高光 + 柔边」模拟 */
+/* Frosted-glass plate: canvas has no backdrop-filter, so simulate it with translucent layers + a top highlight + soft edges */
 function frostedPanel(x, y, w, h, r){
   g.save();
   g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 22; g.shadowOffsetY = 6;
@@ -1037,10 +1131,10 @@ function frostedPanel(x, y, w, h, r){
   rr(x, y, w, h, r); g.fill();
   g.restore();
 
-  g.fillStyle = 'rgba(255,255,255,.055)';          // 玻璃本体
+  g.fillStyle = 'rgba(255,255,255,.055)';          // the glass itself
   rr(x, y, w, h, r); g.fill();
 
-  const grd = g.createLinearGradient(0, y, 0, y + h);   // 上亮下暗，像有厚度
+  const grd = g.createLinearGradient(0, y, 0, y + h);   // bright top, dark bottom — it reads as thickness
   grd.addColorStop(0, 'rgba(255,255,255,.10)');
   grd.addColorStop(0.5, 'rgba(255,255,255,.02)');
   grd.addColorStop(1, 'rgba(255,255,255,.045)');
@@ -1049,11 +1143,11 @@ function frostedPanel(x, y, w, h, r){
   g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 1;
   rr(x + .5, y + .5, w - 1, h - 1, r); g.stroke();
 
-  g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1;   // 顶部内高光
+  g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 1;   // inner highlight along the top
   g.beginPath(); g.moveTo(x + r, y + .5); g.lineTo(x + w - r, y + .5); g.stroke();
 }
 
-/* 玻璃按钮 */
+/* Glass button */
 function glassButton(x, y, w, h, hot, active, enabled){
   g.fillStyle = !enabled ? 'rgba(255,255,255,.035)'
               : active   ? 'rgba(125,211,252,.22)'
@@ -1065,7 +1159,7 @@ function glassButton(x, y, w, h, hot, active, enabled){
   g.lineWidth = 1; rr(x + .5, y + .5, w - 1, h - 1, 8); g.stroke();
 }
 
-/* 三个传输图标手绘，避免依赖字体里的 ⏮⏯⏭ 字形 */
+/* The three transport icons are hand-drawn so nothing depends on ⏮⏯⏭ existing in the font */
 function iconPrev(cx, cy, c){ g.fillStyle = c;
   g.beginPath(); g.moveTo(cx+5,cy-6); g.lineTo(cx+5,cy+6); g.lineTo(cx-3,cy); g.closePath(); g.fill();
   g.fillRect(cx-6, cy-6, 2.2, 12); }
@@ -1083,7 +1177,7 @@ function drawPlayControls(){
   const RW = 40, RH = 24;
   const w = PAD*2 + BW*3 + GAP*2 + 14 + RW*3 + GAP*2 + (play ? 56 : 0);
   const h = 30 + PAD*2;
-  const x = 20, y = VH - 62 - 14 - h;              // 叠在图例之上
+  const x = 20, y = VH - 62 - 14 - h;              // stacked above the legend
   const on = play && !play.paused;
 
   frostedPanel(x, y, w, h, 14);
@@ -1102,7 +1196,7 @@ function drawPlayControls(){
   btn('play', on ? iconPause : iconPlay, true, false);
   btn('next', iconNext, true, false);
 
-  bx += 7;                                          // 分隔线
+  bx += 7;                                          // divider
   g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1;
   g.beginPath(); g.moveTo(bx + .5, cy - 11); g.lineTo(bx + .5, cy + 11); g.stroke();
   bx += 7;
@@ -1119,7 +1213,7 @@ function drawPlayControls(){
     bx += RW + GAP;
   }
 
-  if (play){                                        // 步进读数
+  if (play){                                        // step readout
     const fl = FLOWS[play.fi];
     g.textAlign = 'left';
     g.font = '10.5px ' + FONT; g.fillStyle = '#7f8d9f';
@@ -1128,11 +1222,11 @@ function drawPlayControls(){
   g.textAlign = 'left';
 }
 
-/* ---------------------------------------------------------------- 图例 */
+/* ---------------------------------------------------------------- legend */
 function drawLegend(d, L){
   const lines = [
-    '▸ 滚轮缩放  ▸ F 适应  ▸ E 全展开  ▸ L 切页签 ▸ 悬停端口 → 接口 ▸ 带 ƒ 的端口另字段及含义」 ▸ 每块两个下拉：文件清单 / 内部类·对象   ▸ 悬停带 ‹› 的类名 → 展开仓库里的真实定义代码',
-    '▸ 左侧面板：代码流程（点一条播放） ·功能列表（点一条跳到实现模块） ▸ 左下播放器：← → 单步 · 空格 播放/暂停 · 调速  ▸ B 收起/展开侧栏  '
+    '▸ wheel zoom  ▸ F fit  ▸ E expand all  ▸ L switch tab  ▸ hover a port → its interface  ▸ ports marked ƒ carry a field table  ▸ two drawers per block: files / classes·objects  ▸ hover a class marked ‹› → its real definition from the repository',
+    '▸ left panel: flows (click one to play) · features (click one to jump to the module)  ▸ player bottom left: ← → step · space play/pause · speed  ▸ B collapse/expand the sidebar  ▸ ✎ Edit (top right): rewrite any label · Ctrl+drag a rectangle'
   ];
   g.font = '11px ' + FONT; g.textAlign='left'; g.textBaseline='middle';
   const w = Math.max(g.measureText(lines[0]).width, g.measureText(lines[1]).width) + 24
@@ -1142,15 +1236,15 @@ function drawLegend(d, L){
   g.fillText(lines[0], 32, VH-48);
   g.fillText(lines[1], 32, VH-30);
 
-  const info = d.blocks.length + ' 个模块 · ' + L.links.length + ' 条信号 · ' +
-               d.blocks.filter(b=>b.child).length + ' 个可下钻' +
-               (D[cur()].lv===4 ? ' · 已到最底层' : '');
+  const info = d.blocks.length + ' modules · ' + L.links.length + ' signals · ' +
+               d.blocks.filter(b=>b.child).length + ' drillable' +
+               (D[cur()].lv===4 ? ' · deepest level' : '');
   g.textAlign = 'right'; g.fillStyle = '#5d6878';
   g.fillText(info, VW-24, VH-30);
 }
 
-/* ---------------------------------------------------------------- 提示框 */
-/* 会弹提示框的悬停种类。drawTip 里每加一个分支，这里必须同步 —— 单一事实来源。 */
+/* ---------------------------------------------------------------- tooltip */
+/* Hover kinds that pop a tooltip. Every new branch in drawTip must be added here — single source of truth. */
 const TIP_KINDS = new Set(['port', 'block', 'drawerRow', 'feat']);
 
 function drawTip(){
@@ -1158,54 +1252,54 @@ function drawTip(){
   if (hover.kind === 'port'){
     const pt = hover.p;
     title = pt.n;
-    sub = (pt.dir==='in' ? '◀ 输入端口' : '输出端口 ▶') + ' · ' + hover.b.n;
+    sub = (pt.dir==='in' ? '◀ input port' : 'output port ▶') + ' · ' + hover.b.n;
     color = pt.dir==='in' ? '#5eead4' : '#fbbf24';
-    rows = [['数据类型', pt.t || '—'], ['长度 / 容量', pt.l || '—'], ['储存表 / 落点', pt.s || '—']];
-    if (pt.derived) rows.push(['端口来源', '按上游信号推导']);
+    rows = [['data type', pt.t || '—'], ['size / capacity', pt.l || '—'], ['storage / landing', pt.s || '—']];
+    if (pt.derived) rows.push(['port origin', 'derived from the upstream signal']);
     desc = pt.d || '';
   } else if (hover.kind === 'drawerRow'){
     const b = hover.b, dw = b.drawers[hover.di], f = dw.rows[hover.i];
-    const meta = f[1] === '' || f[1] === undefined ? '—' : (typeof f[1] === 'number' ? f[1] + ' 行' : String(f[1]));
+    const meta = f[1] === '' || f[1] === undefined ? '—' : (typeof f[1] === 'number' ? f[1] + ' lines' : String(f[1]));
     if (dw.kind === 'file'){
       const cut = f[0].lastIndexOf('/') + 1;
       title = f[0].slice(cut) || f[0];
-      sub = '源文件 · 属于「' + b.n + '」';
+      sub = 'source file · in "' + b.n + '"';
       color = '#8fd0ff';
-      rows = [['规模', meta], ['所在目录', f[0].slice(0, cut) || '（仓库根）'], ['所属层级', LV_NAME[D[cur()].lv]]];
-      desc = f[2] || ('完整路径：' + f[0]);
+      rows = [['size', meta], ['directory', f[0].slice(0, cut) || '(repository root)'], ['level', LV_NAME[D[cur()].lv]]];
+      desc = f[2] || ('full path: ' + f[0]);
     } else {
       const cd = codeOf(f);
       title = f[0];
-      sub = '内部类 / 对象 · 属于「' + b.n + '」';
+      sub = 'class / object · in "' + b.n + '"';
       color = '#a78bfa';
-      rows = [['种类', meta], ['所属模块', b.n],
-              ['定义位置', cd ? cd.f + ':' + cd.l : '（无单一声明点）']];
+      rows = [['kind', meta], ['module', b.n],
+              ['defined at', cd ? cd.f + ':' + cd.l : '(no single declaration site)']];
       desc = f[2] || '';
     }
   } else if (hover.kind === 'feat'){
     const ft = FEATURES[hover.i], cd = D[ft.key.split('/')[0]];
     title = ft.n;
-    sub = 'L1 功能 · ' + ft.cat;
+    sub = 'L1 feature · ' + ft.cat;
     color = '#7dd3fc';
-    rows = [['实现模块', ft.key], ['所在图', cd ? cd.title : '—'],
-            ['层级', cd ? LV_NAME[cd.lv] : '—']];
-    desc = (ft.d || '') + '　（点击跳转到该模块所在的图）';
+    rows = [['implemented by', ft.key], ['diagram', cd ? cd.title : '—'],
+            ['level', cd ? LV_NAME[cd.lv] : '—']];
+    desc = (ft.d || '') + '  (click to jump to the diagram that owns this module)';
   } else {
     const b = hover.b;
     const fd = b.drawers.find(x => x.kind === 'file');
     const cd = b.drawers.find(x => x.kind === 'cls');
     title = b.n; sub = b.t || (KIND[b.k]||KIND.comp).tag;
     color = (KIND[b.k]||KIND.comp).s;
-    rows = [['输入端口', b.in.length + ' 个'], ['输出端口', b.out.length + ' 个'],
-            ['文件', fd ? fd.rows.length + ' 个（点 ▾ 展开）' : '—'],
-            ['内部类 / 对象', cd ? cd.rows.length + ' 个（点 ▾ 展开）' : '—'],
-            ['下钻', b.child && D[b.child] ? D[b.child].title : '（叶子模块）']];
+    rows = [['input ports', b.in.length + ''], ['output ports', b.out.length + ''],
+            ['files', fd ? fd.rows.length + ' (click ▾)' : '—'],
+            ['classes / objects', cd ? cd.rows.length + ' (click ▾)' : '—'],
+            ['drills into', b.child && D[b.child] ? D[b.child].title : '(leaf module)']];
     desc = b.d || '';
   }
 
   const ret = (hover.kind === 'port' && hover.p.ret) ? hover.p.ret : null;
 
-  /* 悬停「内部类 / 对象」的一行时，附上它在仓库里的真实定义片段 */
+  /* When hovering a "classes / objects" row, attach its real definition snippet from the repository */
   let code = null;
   if (hover.kind === 'drawerRow'){
     const dw = hover.b.drawers[hover.di];
@@ -1231,11 +1325,11 @@ function drawTip(){
     g.font = '11px ' + FONT;
     e.body.forEach(l => { w = Math.max(w, g.measureText(l).width + 38); });
   });
-  /* 代码块：等宽字体，按可用高度截断 */
+  /* Code block: monospace, truncated to the available height */
   let cw = 0, clines = [], truncated = 0;
   if (code){
     g.font = CODE_FS + 'px ' + MONO;
-    cw = g.measureText('M').width;                       // 等宽 → 按字符下标定位即可
+    cw = g.measureText('M').width;                       // monospace → a character index is enough to position
     const budget = Math.max(6, Math.floor((VH - 300 - rows.length*19 - dlines.length*16) / CODE_LH));
     clines = code.s.slice(0, budget);
     truncated = code.s.length - clines.length;
@@ -1290,7 +1384,7 @@ function drawTip(){
     g.beginPath(); g.moveTo(x+12, yy-2); g.lineTo(x+w-12, yy-2); g.stroke();
     yy += 12;
     g.font = 'italic bold 10.5px ' + FONT; g.fillStyle = '#ffd479';
-    g.fillText('ƒ ' + (hover.p.dir === 'in' ? '入参' : '返回') + '字段（' + rlines.length + '）', x+12, yy);
+    g.fillText('ƒ ' + (hover.p.dir === 'in' ? 'input' : 'return') + ' fields (' + rlines.length + ')', x+12, yy);
     yy += 16;
     rlines.forEach(e => {
       g.fillStyle = '#ffd479';
@@ -1313,12 +1407,12 @@ function drawTip(){
     g.beginPath(); g.moveTo(x+12, yy-2); g.lineTo(x+w-12, yy-2); g.stroke();
     yy += 12;
 
-    // 来源标注
+    // Source annotation
     g.font = 'italic 9.5px ' + FONT; g.fillStyle = '#6f7f95';
     g.fillText(fit('◱ ' + code.f + ':' + code.l, w-24), x+12, yy);
     yy += 14;
 
-    // 代码底板
+    // Code plate
     const boxY = yy - 4, boxH = clines.length*CODE_LH + (truncated ? 14 : 0) + 8;
     g.fillStyle = 'rgba(255,255,255,.035)';
     rr(x+10, boxY, w-20, boxH, 5); g.fill();
@@ -1330,13 +1424,13 @@ function drawTip(){
     for (const line of clines){ drawCodeLine(line, x+18, yy, cw); yy += CODE_LH; }
     if (truncated){
       g.font = 'italic 9.5px ' + FONT; g.fillStyle = '#5d6a7d';
-      g.fillText('… 余 ' + truncated + ' 行，见源文件', x+18, yy+2);
+      g.fillText('… ' + truncated + ' more lines, see the source file', x+18, yy+2);
       yy += 14;
     }
   }
 }
 
-/* ------------------------------------------------- 代码行着色（等宽 → 按字符下标定位） */
+/* ------------------------------------------------- code line colouring (monospace → position by character index) */
 const MONO = 'Consolas,"Cascadia Mono","JetBrains Mono","DejaVu Sans Mono","Courier New",monospace';
 const CODE_FS = 11, CODE_LH = 14;
 const CODE_COL = { base:'#c3cede', kw:'#7dd3fc', str:'#ffc978', com:'#5c6b7e', num:'#c4b5fd', type:'#8fd0ff' };
@@ -1349,7 +1443,7 @@ function drawCodeLine(line, x, y, cw){
 
   const paint = (a, b, c) => { for (let i = Math.max(0,a); i < Math.min(n,b); i++) col[i] = c; };
 
-  // 关键字 / 数字 / 类型名（大写开头）
+  // Keywords / numbers / type names (capitalised)
   let m;
   CODE_KW.lastIndex = 0;
   while ((m = CODE_KW.exec(line))) paint(m.index, m.index + m[0].length, CODE_COL.kw);
@@ -1358,17 +1452,17 @@ function drawCodeLine(line, x, y, cw){
   const typ = /\b[A-Z][A-Za-z0-9_$]*\b/g;
   while ((m = typ.exec(line))) paint(m.index, m.index + m[0].length, CODE_COL.type);
 
-  // 字符串覆盖前面的着色
+  // Strings override the colouring above
   const str = /'[^']*'|"[^"]*"|`[^`]*`/g;
   while ((m = str.exec(line))) paint(m.index, m.index + m[0].length, CODE_COL.str);
 
-  // 注释最优先，整段压过去
+  // Comments win outright and paint over the whole run
   const ci = line.indexOf('//');
   const t = line.trimStart();
   if (t.startsWith('*') || t.startsWith('/*') || t.startsWith('//')) paint(0, n, CODE_COL.com);
   else if (ci >= 0) paint(ci, n, CODE_COL.com);
 
-  // 同色连续段一次画完
+  // Draw each run of a single colour in one call
   let s = 0;
   for (let i = 1; i <= n; i++){
     if (i === n || col[i] !== col[s]){
@@ -1379,8 +1473,8 @@ function drawCodeLine(line, x, y, cw){
   }
 }
 
-/* ---------------------------------------------------------------- 命中 */
-/* 点得动的悬停种类 —— 决定光标是不是变成小手 */
+/* ---------------------------------------------------------------- hit testing */
+/* Hover kinds that are clickable — they decide whether the cursor turns into a pointer */
 const CLICKABLE = new Set(['flow', 'chk', 'stop', 'drawer', 'feat', 'tab',
                            'ctrl', 'panelToggle', 'btn', 'crumb']);
 
@@ -1410,8 +1504,8 @@ function hitTest(mx, my){
           const k = Math.floor((w.y - fy - FCHIP - 4) / FROW);
           if (k >= 0 && k < vis){
             const i = drawerOff(dw) + k;
-            // 抽屉体命中即返回：即使这一行是分组头（不可悬停），也要吞掉，
-            // 否则滚轮会穿透到画布缩放上去。
+            // Return as soon as the drawer body is hit: even a group-header row (not hoverable) must
+            // swallow it, otherwise the wheel falls through and zooms the canvas.
             if (i < dw.rows.length){
               return isGroupRow(dw.rows[i])
                 ? { kind:'drawerBody', b, di }
@@ -1433,26 +1527,26 @@ function hitTest(mx, my){
 }
 const inRect = (x,y,r) => x>=r.x && x<=r.x+r.w && y>=r.y && y<=r.y+r.h;
 
-/* ------------------------------------------------------ 层级切换转场特效 */
-/* 上一层：居中放大 + 淡出（用离屏快照）  下一层：在其下方淡入 */
+/* ------------------------------------------------------ level transition effect */
+/* Outgoing level: scale up from the centre + fade out (offscreen snapshot). Incoming: fade in beneath it */
 const snapCv = document.createElement('canvas');
 const snapG  = snapCv.getContext('2d');
-let trans = null;                   // {t0, dur, dir:1 下钻 / -1 返回}
+let trans = null;                   // {t0, dur, dir:1 drill in / -1 back}
 
 function beginTransition(dir, dur){
   if (!VW || !VH) return;
   snapCv.width = cv.width; snapCv.height = cv.height;
   snapG.clearRect(0, 0, snapCv.width, snapCv.height);
-  snapG.drawImage(cv, 0, 0);        // 抓当前帧
+  snapG.drawImage(cv, 0, 0);        // grab the current frame
   trans = { t0: now(), dur: dur || 420, dir };
 }
 function drawTransition(){
   const p = Math.min(1, (now() - trans.t0) / trans.dur);
   const e = 1 - Math.pow(1 - p, 3);                     // easeOutCubic
-  const k = trans.dir > 0 ? 1 + 0.34*e : 1 - 0.28*e;    // 下钻放大 / 返回缩小
+  const k = trans.dir > 0 ? 1 + 0.34*e : 1 - 0.28*e;    // drill in = grow / back = shrink
   const w = snapCv.width, h = snapCv.height;
   g.save();
-  g.setTransform(1, 0, 0, 1, 0, 0);                     // 快照按设备像素画
+  g.setTransform(1, 0, 0, 1, 0, 0);                     // draw the snapshot in device pixels
   g.globalAlpha = Math.max(0, 1 - e);
   g.translate(w/2, h/2); g.scale(k, k); g.translate(-w/2, -h/2);
   g.drawImage(snapCv, 0, 0);
@@ -1460,10 +1554,10 @@ function drawTransition(){
   if (p >= 1) trans = null;
 }
 
-/* ---------------------------------------------------------------- 导航 */
+/* ---------------------------------------------------------------- navigation */
 function go(id){
   if (!D[id]) return;
-  stopFlow();                       // 手动导航即停止流程演示
+  stopFlow();                       // manual navigation stops the flow demo
   beginTransition(1);
   stack.push(id);
   if (!views[id]) fitView(id);
@@ -1476,9 +1570,17 @@ function jump(i){
   if (i < stack.length-1){ stopFlow(); beginTransition(-1); stack = stack.slice(0, i+1); hover=null; requestDraw(); }
 }
 
-/* ---------------------------------------------------------------- 事件 */
+/* ---------------------------------------------------------------- events */
 cv.addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY; mouse.in = true;
+  if (blockDrag){
+    const v = views[cur()];
+    POS[blockDrag.key] = { x: blockDrag.ox + (e.clientX - blockDrag.sx)/v.s,
+                           y: blockDrag.oy + (e.clientY - blockDrag.sy)/v.s };
+    if (Math.abs(e.clientX-blockDrag.sx) + Math.abs(e.clientY-blockDrag.sy) > 3) blockDrag.moved = true;
+    delete LAY[cur()];                 // recomputing the layout is what re-routes the links
+    requestDraw(); return;
+  }
   if (drag){
     const v = views[cur()];
     v.tx = drag.tx + (e.clientX - drag.x);
@@ -1490,7 +1592,9 @@ cv.addEventListener('mousemove', e => {
   const same = (h===null && hover===null) ||
                (h && hover && h.kind===hover.kind && h.b===hover.b && h.p===hover.p && h.i===hover.i && h.id===hover.id);
   hover = h;
-  cv.style.cursor = !h ? 'grab'
+  if (editMode && e.ctrlKey && h && h.b)              cv.style.cursor = 'move';
+  else if (editMode && hitText(e.clientX, e.clientY)) cv.style.cursor = 'text';
+  else cv.style.cursor = !h ? 'grab'
     : (h.kind === 'drawerRow' || h.kind === 'drawerBody' || h.kind === 'panel') ? 'default'
     : CLICKABLE.has(h.kind) ? 'pointer'
     : ((h.kind === 'block' || h.kind === 'port') && !h.b.child) ? 'default' : 'pointer';
@@ -1499,26 +1603,54 @@ cv.addEventListener('mousemove', e => {
 cv.addEventListener('mouseleave', () => { mouse.in = false; hover = null; requestDraw(); });
 
 cv.addEventListener('mousedown', e => {
+  if (editing) closeEditor();          // clicking away from the form dismisses it without applying
   if (e.button !== 0) return;
+  // Ctrl+drag in edit mode picks up the rectangle instead of panning the canvas
+  if (editMode && e.ctrlKey){
+    const h = hitTest(e.clientX, e.clientY);
+    if (h && h.b){
+      e.preventDefault();
+      blockDrag = { b:h.b, key: cur() + '/' + h.b.id, ox:h.b.x, oy:h.b.y,
+                    sx:e.clientX, sy:e.clientY, moved:false };
+      cv.style.cursor = 'move';
+      return;
+    }
+  }
   const v = views[cur()];
   drag = { x:e.clientX, y:e.clientY, tx:v.tx, ty:v.ty, moved:false };
   cv.style.cursor = 'grabbing';
 });
 window.addEventListener('mouseup', e => {
+  if (blockDrag){
+    const moved = blockDrag.moved, key = blockDrag.key;
+    blockDrag = null; cv.style.cursor = 'grab';
+    if (moved) saveEdits(); else delete POS[key];   // a Ctrl+click that never moved leaves no override
+    delete LAY[cur()]; requestDraw();
+    return;
+  }
   if (!drag) return;
   const moved = drag.moved; drag = null; cv.style.cursor = 'grab';
   if (moved) return;
+
+  // In edit mode a label click wins over navigation, so drilling in never eats an edit
+  if (editMode){
+    const t = hitText(e.clientX, e.clientY);
+    if (t){ openEditor(t); return; }
+  }
+
   const h = hitTest(e.clientX, e.clientY);
   if (!h) return;
   if (h.kind === 'btn'){
     if (h.id==='back') back();
     else if (h.id==='fit'){ fitView(cur()); requestDraw(); }
     else if (h.id==='top'){ stack = ['L1']; hover=null; requestDraw(); }
+    else if (h.id==='edit') toggleEdit();
+    else if (h.id==='reset') resetLayout();
   } else if (h.kind === 'crumb'){ jump(h.i); }
   else if (h.kind === 'flow'){ startFlow(h.i); }
   else if (h.kind === 'chk'){ autoDive = !autoDive; requestDraw(); }
   else if (h.kind === 'stop'){ stopFlow(); }
-  else if (h.kind === 'panel'){ /* 面板空白，吞掉点击 */ }
+  else if (h.kind === 'panel'){ /* panel background: swallow the click */ }
   else if (h.kind === 'ctrl'){
     if (h.id === 'prev') stepBy(-1);
     else if (h.id === 'next') stepBy(1);
@@ -1527,13 +1659,13 @@ window.addEventListener('mouseup', e => {
   }
   else if (h.kind === 'panelToggle'){
     panelOpen = !panelOpen;
-    fitView(cur());                     // 画布可用宽度变了，重新取景
+    fitView(cur());                     // the usable canvas width changed, re-frame
     hover = null; requestDraw();
   }
   else if (h.kind === 'feat'){ gotoFeature(h.i); }
   else if (h.kind === 'tab'){ panelTab = h.t; hover = null; requestDraw(); }
   else if (h.kind === 'drawer'){ toggleDrawer(h.b, h.di); }
-  else if (h.kind === 'drawerRow' || h.kind === 'drawerBody'){ /* 单行只看不跳转 */ }
+  else if (h.kind === 'drawerRow' || h.kind === 'drawerBody'){ /* a single row is read-only, no navigation */ }
   else if (h.kind === 'block' && h.b.child) go(h.b.child);
   else if (h.kind === 'port'  && h.b.child) go(h.b.child);
 });
@@ -1541,11 +1673,11 @@ window.addEventListener('mouseup', e => {
 function toggleDrawer(b, di){
   const k = b.drawers[di].key;
   if (OPEN.has(k)) OPEN.delete(k); else OPEN.add(k);
-  delete LAY[cur()];          // 高度变了，重排本图
+  delete LAY[cur()];          // the height changed, re-lay out this diagram
   hover = null; requestDraw();
 }
 
-/* 点 L1 功能列表的一行：跳到拥有该功能的模块所在的图 */
+/* Clicking a row in the L1 capability list: jump to the diagram that owns the implementing module */
 function gotoFeature(i){
   const ft = FEATURES[i];
   if (!ft) return;
@@ -1558,23 +1690,174 @@ function gotoFeature(i){
   requestDraw();
 }
 
-cv.addEventListener('contextmenu', e => { e.preventDefault(); back(); });
+/* ================================================================== edit mode
+   Everything below is additive: with editMode off, nothing here runs and the map behaves exactly
+   as generated. The markup and CSS for #ed live in build.mjs's HTML shell, the same split the
+   caption (#cap / setCaption) already uses. */
+
+const ED = document.getElementById('ed');
+const ED_TITLE = document.getElementById('edTitle');
+const ED_PATH  = document.getElementById('edPath');
+const ED_BODY  = document.getElementById('edBody');
+const LS_KEY = 'archpresent:edits:' + document.title;
+
+/* Topmost registered label under the cursor (later registrations are drawn on top) */
+function hitText(mx, my){
+  for (let i = ETEXT.length - 1; i >= 0; i--){
+    const t = ETEXT[i];
+    if (mx >= t.x && mx <= t.x+t.w && my >= t.y && my <= t.y+t.h) return t;
+  }
+  return null;
+}
+
+function toggleEdit(){
+  editMode = !editMode;
+  if (!editMode) closeEditor();
+  hover = null; ETEXT.length = 0;
+  cv.style.cursor = 'grab';
+  requestDraw();
+}
+
+function resetLayout(){
+  for (const k of Object.keys(POS)) delete POS[k];
+  for (const k of Object.keys(LAY)) delete LAY[k];
+  saveEdits(); fitView(cur()); requestDraw();
+}
+
+function openEditor(t){
+  closeEditor();
+  editing = t;
+  ED_TITLE.textContent = t.title;
+  ED_PATH.textContent  = t.path || '';
+  ED_BODY.innerHTML = '';
+  const inputs = {};
+  t.fields.forEach(f => {
+    const wrap = document.createElement('div'); wrap.className = 'fld';
+    const lab = document.createElement('label'); lab.textContent = f.label;
+    const el = document.createElement(f.ml ? 'textarea' : 'input');
+    if (!f.ml) el.type = 'text';
+    el.value = t.target[f.k] == null ? '' : String(t.target[f.k]);
+    wrap.appendChild(lab); wrap.appendChild(el); ED_BODY.appendChild(wrap);
+    inputs[f.k] = el;
+  });
+  editing.inputs = inputs;
+
+  // Anchor below the label, clamped into the viewport
+  ED.classList.add('show');
+  const w = ED.offsetWidth, h = ED.offsetHeight;
+  ED.style.left = Math.max(12, Math.min(VW - w - 12, t.x)) + 'px';
+  ED.style.top  = Math.max(12, Math.min(VH - h - 12, t.y + t.h + 10)) + 'px';
+
+  const focusEl = inputs[t.focusKey] || inputs[t.fields[0].k];
+  focusEl.focus(); focusEl.select();
+}
+
+function applyEditor(){
+  if (!editing) return;
+  const t = editing, changed = {};
+  t.fields.forEach(f => {
+    const v = t.inputs[f.k].value;
+    if (String(t.target[f.k] == null ? '' : t.target[f.k]) !== v){ t.target[f.k] = v; changed[f.k] = v; }
+  });
+  closeEditor();
+  if (Object.keys(changed).length){
+    if (t.pkey){
+      const store = TEXT_EDITS[t.pkey] || (TEXT_EDITS[t.pkey] = {});
+      Object.assign(store, changed);
+    }
+    saveEdits();
+    // Port names and link labels feed the layout's derived ports, so invalidate the cache
+    for (const k of Object.keys(LAY)) delete LAY[k];
+  }
+  hover = null; requestDraw();
+}
+
+function closeEditor(){
+  if (!editing) return;
+  editing = null;
+  ED.classList.remove('show');
+  ED_BODY.innerHTML = '';
+}
+
+document.getElementById('edOk').addEventListener('click', applyEditor);
+document.getElementById('edCancel').addEventListener('click', () => { closeEditor(); requestDraw(); });
+ED.addEventListener('mousedown', e => e.stopPropagation());
+ED.addEventListener('wheel', e => e.stopPropagation());
+ED.addEventListener('keydown', e => {
+  e.stopPropagation();                 // keeps the map's single-key shortcuts out of the form
+  if (e.key === 'Escape'){ e.preventDefault(); closeEditor(); requestDraw(); }
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); applyEditor(); }
+  else if (e.key === 'Enter' && e.target.tagName === 'INPUT'){ e.preventDefault(); applyEditor(); }
+});
+
+/* ---------------------------------------------------------- persistence
+   Text edits mutate the diagram data in place, so they are also recorded under a stable key and
+   replayed on load. Rectangle positions are stored as plain overrides. */
+const TEXT_EDITS = {};
+
+function resolveTarget(pkey){
+  const c = pkey.indexOf(':');
+  const kind = pkey.slice(0, c), rest = pkey.slice(c+1);
+  if (kind === 'D') return D[rest] || null;
+  if (kind === 'B'){
+    const [dia, bid] = rest.split('/');
+    return D[dia] ? (D[dia].blocks.find(b => b.id === bid) || null) : null;
+  }
+  if (kind === 'K'){
+    const i = rest.lastIndexOf('/');
+    const dia = rest.slice(0, i), li = +rest.slice(i+1);
+    return D[dia] && D[dia].links ? (D[dia].links[li] || null) : null;
+  }
+  if (kind === 'P'){
+    const m = /^(.*)\/([^/]+)\/(in|out):(\d+)$/.exec(rest);
+    if (!m) return null;
+    const d = D[m[1]]; if (!d) return null;
+    const b = d.blocks.find(x => x.id === m[2]); if (!b) return null;
+    const arr = m[3] === 'in' ? b.in : b.out;
+    return (arr && arr[+m[4]]) || null;
+  }
+  return null;
+}
+
+function saveEdits(){
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ v:1, pos:POS, text:TEXT_EDITS }));
+  } catch { /* private mode / quota / no localStorage: the session works, it just will not survive a reload */ }
+}
+
+function loadEdits(){
+  let raw = null;
+  try { raw = localStorage.getItem(LS_KEY); } catch { return; }
+  if (!raw) return;
+  let saved; try { saved = JSON.parse(raw); } catch { return; }
+  if (!saved || saved.v !== 1) return;
+  Object.assign(POS, saved.pos || {});
+  for (const [pkey, fields] of Object.entries(saved.text || {})){
+    const target = resolveTarget(pkey);
+    if (!target) continue;                      // the map was regenerated and this element is gone
+    TEXT_EDITS[pkey] = fields;
+    Object.assign(target, fields);
+  }
+}
+loadEdits();
+
+cv.addEventListener('contextmenu', e => { e.preventDefault(); if (!editMode) back(); });
 
 cv.addEventListener('wheel', e => {
   e.preventDefault();
-  // 光标在功能列表上时滚列表，而不是缩放画布
+  // With the cursor over the capability list, scroll the list instead of zooming the canvas
   if (HIT.featBox && HIT.featBox.maxScroll > 0 && inRect(e.clientX, e.clientY, HIT.featBox)){
     featScroll = Math.max(0, Math.min(HIT.featBox.maxScroll, featScroll + e.deltaY));
     hover = hitTest(e.clientX, e.clientY);
     requestDraw();
     return;
   }
-  // 光标在某个展开的抽屉体上时滚抽屉，而不是缩放画布
+  // With the cursor over an expanded drawer body, scroll the drawer instead of zooming the canvas
   const hd = hitTest(e.clientX, e.clientY);
   if (hd && (hd.kind === 'drawerRow' || hd.kind === 'drawerBody')){
     const dw = hd.b.drawers[hd.di], span = dw.rows.length - drawerView(dw);
     if (span > 0){
-      // 巨型抽屉（几百条符号的单文件）按 3 行一格要滚上百格 —— Shift 整页跳，Alt 直达两端
+      // A huge drawer (one file with hundreds of symbols) needs a hundred notches at 3 rows each — Shift jumps a page, Alt goes to either end
       const page = Math.max(1, drawerView(dw) - 1);
       const dir = e.deltaY > 0 ? 1 : -1;
       const next = e.altKey ? (dir > 0 ? span : 0)
@@ -1629,8 +1912,8 @@ function resize(){
   cv.width = Math.round(VW*DPR); cv.height = Math.round(VH*DPR);
   cv.style.width = VW+'px'; cv.style.height = VH+'px';
   g.setTransform(DPR,0,0,DPR,0,0);
-  views = {};                      // 视口随窗口重算
-  trans = null;                    // 快照尺寸已失效，直接取消转场
+  views = {};                      // recompute the viewports for the new window size
+  trans = null;                    // the snapshot size is stale, cancel the transition
   requestDraw();
 }
 window.addEventListener('resize', resize);

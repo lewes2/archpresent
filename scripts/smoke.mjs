@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * 冒烟测试：用最小的 DOM + Canvas 2D 桩把整份 HTML 的脚本真跑一遍，
- * 然后遍历全部图逐张布局 + 绘制，并模拟下钻、抽屉展开、抽屉滚动、
- * 流程播放。目的是证明引擎在真实数据上不抛异常、不产生 NaN 布局。
+ * Smoke test: run the whole HTML's script for real against a minimal DOM + Canvas 2D stub, then
+ * walk every diagram (layout + draw) while simulating drill-down, drawer expansion, drawer
+ * scrolling and flow playback — proving the engine neither throws nor produces a NaN layout.
  */
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const HTML = process.argv[2];
-if (!HTML) { console.error('用法：node smoke.mjs <html>'); process.exit(2); }
+if (!HTML) { console.error('Usage: node smoke.mjs <html>'); process.exit(2); }
 const html = readFileSync(HTML, 'utf8');
 const src = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 
-/* ---- Canvas 2D 桩：记录调用，返回合理的度量 ---- */
+/* ---- Canvas 2D stub: record the calls, return plausible metrics ---- */
 let drawCalls = 0;
 const ctx2d = new Proxy({
   measureText: t => ({ width: String(t).length * 6.2 }),
@@ -67,22 +67,22 @@ vm.createContext(sandbox);
 
 let script;
 try {
-  script = new vm.Script(src, { filename: 'wmux架构可视化.html' });
+  script = new vm.Script(src, { filename: 'architecture.html' });
 } catch (e) {
-  console.error('× 脚本语法错误：' + e.message);
+  console.error('× script syntax error: ' + e.message);
   process.exit(1);
 }
-console.log('✓ 脚本语法检查通过（' + src.split('\n').length + ' 行）');
+console.log('✓ script parses (' + src.split('\n').length + ' lines)');
 
 try {
   script.runInContext(sandbox);
 } catch (e) {
-  console.error('× 脚本执行抛异常：' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 6).join('\n'));
+  console.error('× script threw during init: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 6).join('\n'));
   process.exit(1);
 }
-console.log('✓ 初始化执行通过（首帧绘制调用 ' + drawCalls + ' 次）');
+console.log('✓ init executed (first frame made ' + drawCalls + ' draw calls)');
 
-/* ---- 逐张图布局 + 绘制 ---- */
+/* ---- layout + draw, diagram by diagram ---- */
 vm.runInContext(`
 globalThis.__probe = () => {
   const out = { diagrams: 0, blocks: 0, bad: [], drawers: 0, scrollable: 0 };
@@ -92,7 +92,7 @@ globalThis.__probe = () => {
     for (const b of L.blocks) {
       out.blocks++;
       if (!Number.isFinite(b.x) || !Number.isFinite(b.y) || !Number.isFinite(b.h) || b.h <= 0) {
-        out.bad.push(id + '/' + b.id + ' 布局非法 h=' + b.h);
+        out.bad.push(id + '/' + b.id + ' illegal layout h=' + b.h);
       }
       for (const dw of b.drawers) {
         out.drawers++;
@@ -135,29 +135,29 @@ globalThis.__playAll = () => {
 const run = (label, expr) => {
   try {
     const r = vm.runInContext(expr, sandbox);
-    console.log('✓ ' + label + '：' + (typeof r === 'object' ? JSON.stringify(r) : r));
+    console.log('✓ ' + label + ': ' + (typeof r === 'object' ? JSON.stringify(r) : r));
     return r;
   } catch (e) {
-    console.error('× ' + label + ' 抛异常：' + e.message + '\n  ' + (e.stack || '').split('\n')[1]);
+    console.error('× ' + label + ' threw: ' + e.message + '\n  ' + (e.stack || '').split('\n')[1]);
     process.exitCode = 1;
     return null;
   }
 };
 
-const probe = run('全部图布局', '__probe()');
+const probe = run('layout every diagram', '__probe()');
 if (probe && probe.bad.length) { probe.bad.slice(0, 10).forEach(m => console.error('    × ' + m)); process.exitCode = 1; }
-run('展开全部抽屉', '__expandAll()');
-run('抽屉滚到底', '__scrollDrawers()');
+run('expand every drawer', '__expandAll()');
+run('scroll drawers to the end', '__scrollDrawers()');
 drawCalls = 0;
-run('逐张绘制（抽屉全展开 + 滚到底）', '__drawEvery()');
-console.log('  绘制调用累计 ' + drawCalls + ' 次');
-run('播放全部流程', '__playAll()');
-run('下钻 L1→L2→L3→L4 再返回', `(() => {
+run('draw every diagram (drawers expanded + scrolled)', '__drawEvery()');
+console.log('  cumulative draw calls: ' + drawCalls);
+run('play every flow', '__playAll()');
+run('drill down L1→L2→L3→L4 and back', `(() => {
   stack = ['L1'];
   const path = Object.values(D).filter(d=>d.lv>1).slice(0,3).map(d=>d.id);
   for (const id of path) { stack.push(id); fitView(id); draw(); }
   while (stack.length > 1) { back(); draw(); }
-  return stack.join('→') + '（已回到 L1）';
+  return stack.join('→') + ' (back at L1)';
 })()`);
 
-console.log(process.exitCode ? '\n× 冒烟测试有失败' : '\n✓ 冒烟测试全部通过');
+console.log(process.exitCode ? '\n× smoke test had failures' : '\n✓ smoke test fully passed');

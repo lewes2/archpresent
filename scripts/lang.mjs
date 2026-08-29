@@ -1,16 +1,19 @@
 /**
- * lang.mjs —— scan.mjs 与 verify.mjs 共享的「哪些文件算源文件」。
+ * lang.mjs — "what counts as a source file", shared by scan.mjs and verify.mjs.
  *
- * 为什么只共享这一层：verify 的价值在于**独立回源**，所以符号抽取的正则两边各写各的，
- * 绝不复用。但「文件集合」必须两边完全一致——如果 scan 认识 .vue 而 verify 不认识，
- * verify 的 UNCOVERED_FILE 断言对这类文件就形同虚设，"全覆盖"会是一句假话。
- * 这正是这个文件存在的唯一理由。
+ * Why this layer is shared: verify earns its keep by going **back to the source independently**, so the
+ * symbol-extraction regexes are written twice on purpose and never reused. But the *set of files* must be
+ * identical on both sides — if scan knows about .vue and verify does not, verify's UNCOVERED_FILE
+ * assertion is vacuous there and "full coverage" is a lie. That is the whole reason this file exists.
+ *
+ * The toolchain has exactly one other shared layer, for the same class of reason: patterns.mjs, so that
+ * the counts stats reports can never disagree with the ownership build assigns.
  */
 
-/** 单文件组件：script 块里才有声明，模板与样式不参与符号抽取 */
+/** Single-file components: declarations live in the script block; template and style are not scanned */
 export const SFC_EXT = ['.vue', '.svelte'];
 
-/** 全部被视为源文件的扩展名。改这里 = 同时改 scan 与 verify 的覆盖面。 */
+/** Every extension treated as source. Editing this changes the reach of scan AND verify at once. */
 export const SRC_EXT = new Set([
   '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs',
   ...SFC_EXT,
@@ -18,7 +21,7 @@ export const SRC_EXT = new Set([
   '.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
 ]);
 
-/** TS/JS 家族：verify 会对它们额外断言「声明行必须以 export 开头」 */
+/** The TS/JS family: verify additionally asserts that a declaration line begins with `export` */
 export const JS_EXT = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 
 export const SKIP_DIR = new Set([
@@ -29,7 +32,7 @@ export const SKIP_DIR = new Set([
   'fixtures', 'testdata', 'docs', 'examples', 'assets', 'public', 'static',
 ]);
 
-/** 探测源码根时优先看这些名字 */
+/** Names to prefer when probing for a source root */
 export const ROOT_HINTS = ['src', 'lib', 'app', 'apps', 'packages', 'core', 'internal',
                            'pkg', 'cmd', 'source', 'server', 'client', 'backend', 'frontend'];
 
@@ -38,8 +41,8 @@ export const isTest = n =>
   /^test_.*\.py$/.test(n) || /_test\.(go|py)$/.test(n) || /Tests?\.(java|kt|cs)$/.test(n);
 
 /**
- * SFC 的 <script> 行区间（1 起算，闭区间）。
- * verify 用它断言「符号声称的行确实落在 script 块内」——模板里出现同名字符串不算数。
+ * Line range of an SFC's <script> block (1-based, inclusive).
+ * verify uses it to assert a symbol's claimed line really is inside the script block — the same identifier appearing in the template does not count.
  */
 export function scriptRanges(lines) {
   const ranges = [];

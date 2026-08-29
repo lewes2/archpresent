@@ -1,12 +1,14 @@
 /**
- * 【可选，强烈建议】要在悬停时展开真实定义片段的符号：[文件路径, 导出符号名, 取多少行]。
- * build.mjs 按符号的真实行号从磁盘现切（并向上收编紧贴的注释块），
- * 所以这里写不错源码 —— 写错的只可能是路径或符号名，那会在构建时报错，
- * 并顺带列出该文件里可选的符号名，照着改即可。
+ * OPTIONAL but strongly recommended — Symbols whose real definition should expand on hover:
+ * [filePath, exportedSymbolName, howManyLines].
+ * build.mjs cuts the snippet fresh from disk at the symbol's real line number (absorbing any comment
+ * block immediately above it), so you cannot get the source wrong here — only the path or the symbol
+ * name, and that fails at build time, which also prints the symbol names available in that file so you
+ * can just fix it.
  *
- * 挑那些「注释或常量本身就是设计说明」的符号，效果最好：阈值表、超时常量、
- * 正则闸门、加锁逻辑、格式字符串。挑普通的 getter 只会浪费一格。
+ * Pick the symbols whose comments or constants ARE the design documentation: threshold tables, timeout
+ * constants, regex gates, locking logic, format strings. Picking an ordinary getter wastes a slot.
  */
 export const CODE_PICKS = [
-  ['<路径>', '<符号名>', 16],
+  ['<path>', '<symbolName>', 16],
 ];

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * scan.mjs — 只读代码清点器。
+ * scan.mjs — read-only code inventory extractor.
  *
- * 遍历仓库源码根，为每个非测试源文件产出
+ * Walks the repository's source roots and, for every non-test source file, produces
  *   { path, lines, exports: [{ name, kind, line }] }
- * 写入 <workDir>/inventory.json，并在 stderr 打印目录汇总（用于设计模块分块）。
+ * Writes <workDir>/inventory.json and prints a directory summary to stderr (used to design blocks).
  *
- * 用法：
+ * Usage:
  *   node scan.mjs <repoRoot> <workDir> [srcRoot ...]
- * 不给 srcRoot 时自动探测仓库根下的源码目录。
+ * With no srcRoot given, source directories under the repository root are auto-detected.
  */
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, relative, sep, extname } from 'node:path';
@@ -16,12 +16,12 @@ import { SFC_EXT, SKIP_DIR, ROOT_HINTS, isTest, scriptRanges } from './lang.mjs'
 
 const [, , REPO, WORK, ...ROOTS_IN] = process.argv;
 if (!REPO || !WORK) {
-  console.error('用法：node scan.mjs <repoRoot> <workDir> [srcRoot ...]');
+  console.error('Usage: node scan.mjs <repoRoot> <workDir> [srcRoot ...]');
   process.exit(2);
 }
 
-/* ---------------------------------------------------------- 语言支持 */
-/** 每种语言：扩展名 → 顶层声明匹配。kind 用统一词汇，便于跨语言呈现。 */
+/* ---------------------------------------------------------- language support */
+/** Per language: extension → top-level declaration match. `kind` uses one shared vocabulary. */
 const LANGS = [
   {
     name: 'ts', ext: ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'],
@@ -67,9 +67,9 @@ const LANGS = [
     ],
   },
   {
-    // C/C++：只认**列 0 顶格**的声明。类内成员是缩进的，故天然被排除——
-    // 这样 .h 贡献「类型面」（class/struct/enum/using），.cpp 贡献「实现面」
-    // （Class::method 定义与自由函数定义），两侧不互相淹没，每块符号数才压得住。
+    // C/C++: only declarations at **column 0** count. Class members are indented, so they are excluded
+    // naturally — .h then contributes the "type surface" (class/struct/enum/using) and .cpp the
+    // "implementation surface" (Class::method definitions, free functions). Neither drowns the other, which is what keeps per-block symbol counts manageable.
     name: 'cpp', ext: ['.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx'],
     rules: [
       [/^(?:template\s*<[^>]*>\s*)?class\s+(?:[A-Z][A-Z0-9_]*_EXPORT\s+)?([A-Za-z_]\w*)\s*(?:final\s*)?(?::|\{|;|$)/, 'class'],
@@ -79,8 +79,8 @@ const LANGS = [
       [/^using\s+([A-Za-z_]\w*)\s*=/, 'type'],
       [/^typedef\s+[\w\s:<>,*&]+?\b([A-Za-z_]\w*)\s*;/, 'type'],
       [/^(?:constexpr|const|static|inline|extern)[\w\s:<>,*&\[\]]*?\b([A-Za-z_]\w*)\s*(?:=|\[)/, 'const'],
-      // (?!\s) 是必需的：\s 在字符类里，没有它前缀会把行首缩进一并吃掉，
-      // 于是函数体内缩进的 `return R::err(...)` 会被当成 R::err 的定义。
+      // The (?!\s) is required: \s sits inside the character class, and without this prefix the leading
+      // indentation is eaten too, so an indented `return R::err(...)` in a body reads as R::err's definition.
       [/^(?!\s)[\w:<>,*&\s]*?\b([A-Za-z_]\w*::[A-Za-z_~]\w*)\s*\(/, 'method'],
       [/^[A-Za-z_][\w:<>,*&\s]+?\b([A-Za-z_]\w*)\s*\([^;]*$/, 'function'],
     ],
@@ -95,8 +95,8 @@ const LANGS = [
     ],
   },
   {
-    // 单文件组件：Vue / Svelte。声明只认 <script> 块里顶格（列 0）的那些——
-    // 组件的「内部对象」就是这些顶层 state / computed / 事件处理器，模板不算。
+    // Single-file components: Vue / Svelte. Only declarations at column 0 inside <script> count —
+    // a component's "internal objects" are exactly those top-level state / computed / handlers, never the template.
     name: 'sfc', ext: SFC_EXT, sfc: true,
     rules: [
       [/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/, 'interface'],
@@ -107,13 +107,13 @@ const LANGS = [
   },
 ];
 /**
- * 经典脚本（classic script）规则集。
+ * Classic-script rule set.
  *
- * 浏览器扩展的 content script / 页面脚本不能用 ES 模块，惯例是整份包在 IIFE 里，
- * 于是「顶层声明」实际缩进 2 格、且一个 export 都没有。若只认 `^export`，
- * 这一整层会连一个符号都抽不到——正是「整层被静默漏掉」。
- * 故：文件内没有任何 `^export` 时改用这套规则，允许的缩进由是否 IIFE 包裹决定
- * （IIFE → 0 或 2 格；否则只认列 0），避免把函数体内的局部声明误当成顶层。
+ * A browser extension's content script / page script cannot be an ES module; the convention is to wrap
+ * the whole file in an IIFE, so "top-level" declarations are actually indented two spaces and there is
+ * not a single export. Matching only `^export` extracts zero symbols from that entire layer — exactly
+ * the "whole layer silently dropped" failure. So when a file contains no `^export` at all, use this rule
+ * set; the allowed indentation depends on the IIFE wrapper (IIFE → 0 or 2 spaces, otherwise column 0 only) so locals inside a function body are not mistaken for top-level.
  */
 const CLASSIC_RULES = [
   [/class\s+([A-Za-z_$][\w$]*)/, 'class'],
@@ -126,18 +126,18 @@ const hasExport = t => /^export\s/m.test(t);
 const EXT2LANG = new Map();
 for (const l of LANGS) for (const e of l.ext) EXT2LANG.set(e, l);
 
-/** SFC 里无赋值的编译宏调用：defineProps({...}) / defineEmits([...]) 等 */
+/** Compiler-macro calls without assignment inside an SFC: defineProps({...}) / defineEmits([...]) etc. */
 const SFC_BARE_MACRO = /^(defineProps|defineEmits|defineOptions|defineExpose|defineSlots|defineModel|withDefaults)\s*[(<]/;
-/** SFC 里的解构：const { a, b } = defineProps(...) —— 记右手边那个名字 */
+/** Destructuring inside an SFC: const { a, b } = defineProps(...) — record the right-hand name */
 const SFC_DESTRUCTURED = /^(?:const|let)\s+\{[^}]*\}\s*=\s*([A-Za-z_$][\w$]*)\s*[(<]/;
 
-/* ---------------------------------------------------------- 遍历 */
-/** 非代码资产：出现在源码根里很正常，不必提示 */
+/* ---------------------------------------------------------- traversal */
+/** Non-code assets: perfectly normal inside a source root, nothing to flag */
 const ASSET_EXT = new Set(['.css', '.scss', '.sass', '.less', '.json', '.jsonc', '.md', '.mdx', '.txt',
   '.yml', '.yaml', '.toml', '.xml', '.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp',
   '.ico', '.avif', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.map', '.lock', '.snap', '.sql', '.env',
   '.sh', '.bat', '.ps1', '.cmake', '.in', '.rc', '.qrc', '.ui', '.ts_', '.cmd', '.gitignore', '.editorconfig', '.LICENSE', '']);
-/** 源码根里出现但本扫描器不认识的扩展名 → 结尾提示，防止「整层被静默漏掉」 */
+/** Extensions present in a source root that this scanner does not know → reported at the end, so a whole layer cannot be dropped silently */
 const unknownExt = new Map();
 
 function walk(dir, out) {
@@ -163,11 +163,20 @@ function detectRoots() {
   const found = [];
   for (const h of ROOT_HINTS) if (existsSync(join(REPO, h))) found.push(h);
   if (found.length) return found;
-  return ['.'];                                   // 兜底：整个仓库根
+  return ['.'];                                   // fallback: the whole repository root
 }
 
-/* ---------------------------------------------------------- 符号抽取 */
+/* ---------------------------------------------------------- symbol extraction */
+/** A class whose name ends in one of these is a service object, not just a class — build.mjs sorts
+ *  this kind first in the symbol inventory and verify.mjs has a matching assertion for it. */
+const SERVICE_SUFFIX = /(?:Service|Manager|Registry|Store|Server|Router|Controller|Broker|Supervisor|Coordinator)$/;
+
 function refine(name, kind, line, isView) {
+  // Checked before the gate below, and this is now the only copy of the rule. Behind that early
+  // return it was unreachable: extractClassic reaches refine with kind 'class', so every class in a
+  // classic (non-module) script silently missed the promotion, and extract() carried a second copy
+  // of the same regex to work around it.
+  if (kind === 'class' && SERVICE_SUFFIX.test(name)) return 'Service';
   if (kind !== 'function' && kind !== 'const') return kind;
   const arrow = /=\s*(?:async\s*)?(?:<[^>]*>\s*)?\([^)]*\)\s*(?::[^=]*)?=>/.test(line)
     || /=\s*(?:async\s*)?function\b/.test(line)
@@ -176,13 +185,10 @@ function refine(name, kind, line, isView) {
   if (/^use[A-Z]/.test(name)) return 'hook';
   if (isView && /^[A-Z]/.test(name) && (kind === 'function' || arrow)) return 'component';
   if (kind === 'const' && arrow) return 'function';
-  if (kind === 'class' && /(Service|Manager|Registry|Store|Server|Router|Controller|Broker|Supervisor|Coordinator)$/.test(name)) {
-    return 'Service';
-  }
   return kind;
 }
 
-/** SFC 顶层声明的种类细化：组件的「内部对象」值得按响应式角色分开看 */
+/** Refining the kind of an SFC top-level declaration: a component's "internal objects" are worth splitting by reactive role */
 function refineSfc(name, line) {
   if (/=\s*defineProps\b/.test(line) || /^defineProps\b/.test(line) || /=\s*withDefaults\b/.test(line)) return 'props';
   if (/=\s*defineEmits\b/.test(line) || /^defineEmits\b/.test(line)) return 'emits';
@@ -196,7 +202,7 @@ function refineSfc(name, line) {
   return 'const';
 }
 
-/** SFC 专用：只扫 <script> 块，模板与样式不产生符号 */
+/** SFC-only: scan the <script> block; template and style produce no symbols */
 function extractSfc(lines, lang) {
   const out = [];
   const seen = new Set();
@@ -282,9 +288,7 @@ function extract(text, lang, isView) {
     for (const [rx, kind0] of lang.rules) {
       const m = raw.match(rx);
       if (!m) continue;
-      let kind = kind0;
-      if (kind0 === 'class' && /(Service|Manager|Registry|Store|Server|Router|Controller|Broker|Supervisor|Coordinator)$/.test(m[1])) kind = 'Service';
-      else kind = refine(m[1], kind0, raw, isView);
+      const kind = refine(m[1], kind0, raw, isView);
       push(m[1], kind, ln);
       if (kind0 === 'const' && lang.reexport) {          // export const A = 1, B = 2
         const tail = raw.slice(raw.indexOf(m[1]) + m[1].length);
@@ -297,7 +301,7 @@ function extract(text, lang, isView) {
   return out;
 }
 
-/* ---------------------------------------------------------- 主流程 */
+/* ---------------------------------------------------------- main */
 const roots = ROOTS_IN.length ? ROOTS_IN : detectRoots();
 const files = [];
 for (const r of roots) walk(join(REPO, r), files);
@@ -335,26 +339,26 @@ writeFileSync(join(WORK, 'inventory.json'),
   'utf8');
 
 console.error(`inventory.json → ${join(WORK, 'inventory.json')}`);
-console.error(`  源码根：${roots.join(' ')}`);
-console.error(`  ${totals.files} 文件 / ${totals.lines} 行 / ${totals.exports} 导出符号 / ${totals.dirs} 目录\n`);
-console.error('目录汇总（符号数 文件数 行数 目录）—— 据此设计分块，每块符号数控制在 ≤80：');
+console.error(`  source roots: ${roots.join(' ')}`);
+console.error(`  ${totals.files} files / ${totals.lines} lines / ${totals.exports} exported symbols / ${totals.dirs} directories\n`);
+console.error('Directory summary (symbols files lines directory) — design your blocks from this; keep each block at 80 symbols or fewer:');
 for (const d of Object.values(byDir).sort((a, b) => b.exports - a.exports)) {
   console.error(`  ${String(d.exports).padStart(5)} ${String(d.files).padStart(4)}f ${String(d.lines).padStart(7)}L  ${d.dir}`);
 }
 
-/* 单文件符号数超标 —— 它们只能各自独占一个矩形，且本身就是重构信号 */
+/* Files over the symbol limit — each can only own a rectangle, and is itself a refactoring signal */
 const oversized = records.filter(r => r.exports.length > 80)
   .sort((a, b) => b.exports.length - a.exports.length);
 if (oversized.length) {
-  console.error(`\n⚠ ${oversized.length} 个文件符号数 > 80：无法再按主题切分，只能各自独占一个矩形（并在 d 里点明它为什么这么大）：`);
-  for (const r of oversized) console.error(`  ${String(r.exports.length).padStart(5)} 符号 ${String(r.lines).padStart(6)}L  ${r.path}`);
+  console.error(`\n⚠ ${oversized.length} file(s) have more than 80 symbols: they cannot be split by theme, so each must own a rectangle (and say in its 'd' why it is that large):`);
+  for (const r of oversized) console.error(`  ${String(r.exports.length).padStart(5)} sym ${String(r.lines).padStart(6)}L  ${r.path}`);
 }
 
-/* 源码根里有本扫描器不认识的扩展名 —— 这正是「整层被静默漏掉」的唯一征兆 */
+/* An extension in a source root this scanner does not know — the only symptom of a whole layer being dropped */
 if (unknownExt.size) {
   const list = Array.from(unknownExt.entries()).sort((a, b) => b[1] - a[1]);
-  console.error(`\n⚠ 源码根下有 ${list.length} 种未识别扩展名，这些文件既不在清单里、verify 也不会追究：`);
-  for (const [ext, n] of list) console.error(`  ${String(n).padStart(5)} 个  ${ext || '(无扩展名)'}`);
-  console.error('  若其中包含真正的源码，先在 scripts/lang.mjs 与 scan.mjs 的 LANGS 里补上再继续——');
-  console.error('  漏掉一整层（比如整个 UI 组件层）会让这份架构图从根上是错的。');
+  console.error(`\n⚠ ${list.length} unrecognized extension(s) under the source roots; those files are neither in the inventory nor checked by verify:`);
+  for (const [ext, n] of list) console.error(`  ${String(n).padStart(5)}  ${ext || '(no extension)'}`);
+  console.error('  If any of them is real source, add it to SRC_EXT in scripts/lang.mjs and LANGS in scan.mjs before continuing —');
+  console.error('  dropping a whole layer (an entire UI component layer, say) makes this architecture map wrong at its root.');
 }

@@ -28,19 +28,19 @@
 ### What can ArchPresent do?
 ArchPresent reads a repository and produces one self-contained HTML file: an interactive architecture map you can open by double-clicking it. No server, no build step, no network calls, no dependencies.
 
-![Demo](https://github.com/user-attachments/assets/08cd3bdb-8967-4fdb-b7d4-c6fc8f985502)
+<video src="[https://github.com/user-attachments/assets/08cd3bdb-8967-4fdb-b7d4-c6fc8f985502]" controls="controls" width="500" height="300"></video>
 
 [Example page ↗](https://lewes2.github.io/archpresent/)
 
-![Demo](https://github.com/user-attachments/assets/fa3d9bc2-645c-4bb7-ab74-5fa59d2c96a6)
+<video src="[https://github.com/user-attachments/assets/fa3d9bc2-645c-4bb7-ab74-5fa59d2c96a6]" controls="controls" width="500" height="300"></video>
 
 [Example page ↗](https://lewes2.github.io/archpresent/)
 
-![Demo](https://github.com/user-attachments/assets/bccc772a-59a7-4a78-9109-13d88fc5ec80)
+<video src="[https://github.com/user-attachments/assets/bccc772a-59a7-4a78-9109-13d88fc5ec80]" controls="controls" width="500" height="300"></video>
 
 [Example page ↗](https://lewes2.github.io/archpresent/)
 
-![Demo](https://github.com/user-attachments/assets/ea2a0893-e669-47f6-8bae-2f92b45d98ba)
+<video src="[https://github.com/user-attachments/assets/ea2a0893-e669-47f6-8bae-2f92b45d98ba]" controls="controls" width="500" height="300"></video>
 
 [Example page ↗](https://lewes2.github.io/archpresent/)
 ## Quick Start

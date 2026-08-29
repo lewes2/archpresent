@@ -56,32 +56,6 @@ git clone https://github.com/lewes2/archpresent.git
 
   Example: a 159-file / 54,359-line monorepo maps to 16 diagrams and 193 rectangles.
 
-## See what the interfaces actually carry
-
-  Every connection is a five-part port, not a labelled arrow.
-  Hover one and it tells you:
-
-  ┌─────────┬─────────────────────────────────────────────────┐
-  │ Column  │                  What it holds                  │                
-  ├─────────┼─────────────────────────────────────────────────┤
-  │ data    │ a real identifier — WSMessage{type,payload:{tex │
-  │ type    │ t,sessionId?,images?}}, never "a request        │
-  │         │ object"                                         │
-  ├─────────┼─────────────────────────────────────────────────┤
-  │ size /  │ the real constraint — ≤4 images · ≤10 MiB each, │
-  │ capacit │  ring 1024, 45 s timeout · ≤2 retries           │
-  │ y       │                                                 │
-  ├─────────┼─────────────────────────────────────────────────┤
-  │         │ the real landing place —                        │
-  │ storage │ ~/.config/app/app.sqlite, session_worktrees     │
-  │         │ table, — if none                                │
-  ├─────────┼─────────────────────────────────────────────────┤
-  │ why     │ the reason for the constraint, the trap someone │
-  │         │  already hit, the failure mode                  │
-  └─────────┴─────────────────────────────────────────────────┘
-
-  That last column is what makes the map worth reading a second time. Ports carrying a structured payload are marked ƒ and expand into a field-by-field table.
-
 ## Inventories that cannot drift
 
   Every rectangle carries two drawers: its file inventory (real paths, real line counts) and its classes / objects / functions (grouped by file, with kind and line number). Hover a symbol to see its real source snippet, cut fresh from disk.

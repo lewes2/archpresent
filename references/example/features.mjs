@@ -1,0 +1,15 @@
+export const FEATURES = [
+  { n:'四层 C4 下钻',        cat:'呈现',   key:'L1/ENGINE',        d:'点矩形下钻，右键/Esc 返回；导航栈保证能回到 L1' },
+  { n:'悬停端口看接口字段',  cat:'呈现',   key:'L3-TEMPLATE/RET',  d:'结构化报文展开成 [字段, 类型, 含义] 表' },
+  { n:'悬停清单行看源码',    cat:'呈现',   key:'L3-TEMPLATE/CODE', d:'片段从磁盘现切，键是 文件:行号，同名符号不撞车' },
+  { n:'抽屉视窗与滚动',      cat:'呈现',   key:'L1/ENGINE',        d:'单文件上百个导出也不会把矩形撑到几千像素高' },
+  { n:'典型场景流程播放',    cat:'呈现',   key:'L3-TEMPLATE/FLOW', d:'跨层投影 —— 同一条链路在 L1 与 L4 粒度不同' },
+  { n:'六族语言清点',        cat:'清点',   key:'L2-TOOL/SCAN',     d:'TS/JS · Vue/Svelte 单文件组件 · Python · Go · Rust · JVM，kind 用统一词汇' },
+  { n:'目录汇总指导分块',    cat:'清点',   key:'L1/SCAN',          d:'按符号数降序打印，超过 80 就该再切' },
+  { n:'全覆盖不重复',        cat:'质量门', key:'L2-TOOL/BUILD',    d:'同图内重复归属或全仓漏文件，构建当场失败' },
+  { n:'独立回源核对',        cat:'质量门', key:'L2-GATE/BACKREF',  d:'核对器不复用抽取器的正则，也不读它的输出；只共享「哪些文件算源文件」' },
+  { n:'统计数字自动回填',    cat:'质量门', key:'L2-TOOL/BUILD',    d:'{{files}}/{{lines}}/{{exports}} 由 blockmap 实际归属填 —— 手写聚合数字骗得过全部断言' },
+  { n:'覆盖面不留盲区',      cat:'质量门', key:'L2-TOOL/LANG',     d:'扫描与核对共用文件集合定义，杜绝「scan 认识而 verify 不认识」的静默漏检' },
+  { n:'路径模式即时核验',    cat:'清点',   key:'L2-TOOL/STATS',    d:'命中 0 个文件会告警——写进 blockmap 就是一次漏覆盖' },
+  { n:'桩化冒烟',            cat:'质量门', key:'L2-GATE/STUB',     d:'不需要真浏览器就能证明引擎不抛异常、不产生 NaN 布局' },
+];

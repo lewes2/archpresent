@@ -1,0 +1,199 @@
+{
+ "root": "C:/Users/80576/.claude/skills/architecture-viz",
+ "roots": [
+  "scripts",
+  "references/template"
+ ],
+ "totals": {
+  "files": 14,
+  "lines": 1461,
+  "exports": 18,
+  "filesWithExports": 9,
+  "dirs": 2
+ },
+ "dirs": [
+  {
+   "dir": "references/template",
+   "files": 8,
+   "lines": 260,
+   "exports": 10
+  },
+  {
+   "dir": "scripts",
+   "files": 6,
+   "lines": 1201,
+   "exports": 8
+  }
+ ],
+ "files": [
+  {
+   "path": "references/template/blockmap.mjs",
+   "lines": 31,
+   "exports": [
+    {
+     "name": "BLOCKMAP",
+     "kind": "const",
+     "line": 27
+    }
+   ]
+  },
+  {
+   "path": "references/template/code.mjs",
+   "lines": 13,
+   "exports": [
+    {
+     "name": "CODE_PICKS",
+     "kind": "const",
+     "line": 10
+    }
+   ]
+  },
+  {
+   "path": "references/template/diagrams.mjs",
+   "lines": 157,
+   "exports": [
+    {
+     "name": "DIAGRAMS",
+     "kind": "const",
+     "line": 66
+    }
+   ]
+  },
+  {
+   "path": "references/template/dsl.mjs",
+   "lines": 6,
+   "exports": [
+    {
+     "name": "p",
+     "kind": "function",
+     "line": 2
+    },
+    {
+     "name": "blk",
+     "kind": "const",
+     "line": 5
+    }
+   ]
+  },
+  {
+   "path": "references/template/features.mjs",
+   "lines": 8,
+   "exports": [
+    {
+     "name": "FEATURES",
+     "kind": "const",
+     "line": 5
+    }
+   ]
+  },
+  {
+   "path": "references/template/flows.mjs",
+   "lines": 17,
+   "exports": [
+    {
+     "name": "FLOWS",
+     "kind": "const",
+     "line": 6
+    }
+   ]
+  },
+  {
+   "path": "references/template/notes.mjs",
+   "lines": 13,
+   "exports": [
+    {
+     "name": "FILE_NOTES",
+     "kind": "const",
+     "line": 7
+    },
+    {
+     "name": "SYM_NOTES",
+     "kind": "const",
+     "line": 10
+    }
+   ]
+  },
+  {
+   "path": "references/template/ret.mjs",
+   "lines": 15,
+   "exports": [
+    {
+     "name": "RET_TABLES",
+     "kind": "const",
+     "line": 10
+    }
+   ]
+  },
+  {
+   "path": "scripts/build.mjs",
+   "lines": 377,
+   "exports": []
+  },
+  {
+   "path": "scripts/lang.mjs",
+   "lines": 59,
+   "exports": [
+    {
+     "name": "SFC_EXT",
+     "kind": "const",
+     "line": 11
+    },
+    {
+     "name": "SRC_EXT",
+     "kind": "const",
+     "line": 14
+    },
+    {
+     "name": "JS_EXT",
+     "kind": "const",
+     "line": 21
+    },
+    {
+     "name": "SKIP_DIR",
+     "kind": "const",
+     "line": 23
+    },
+    {
+     "name": "ROOT_HINTS",
+     "kind": "const",
+     "line": 32
+    },
+    {
+     "name": "isTest",
+     "kind": "const",
+     "line": 35
+    },
+    {
+     "name": "scriptRanges",
+     "kind": "function",
+     "line": 43
+    },
+    {
+     "name": "inScript",
+     "kind": "function",
+     "line": 58
+    }
+   ]
+  },
+  {
+   "path": "scripts/scan.mjs",
+   "lines": 302,
+   "exports": []
+  },
+  {
+   "path": "scripts/smoke.mjs",
+   "lines": 164,
+   "exports": []
+  },
+  {
+   "path": "scripts/stats.mjs",
+   "lines": 90,
+   "exports": []
+  },
+  {
+   "path": "scripts/verify.mjs",
+   "lines": 209,
+   "exports": []
+  }
+ ]
+}

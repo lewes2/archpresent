@@ -26,7 +26,7 @@
 # Professional Interactive Architecture Map
 
 ### What can ArchPresent do?
-ArchPresent is an agent skill that generate diagrams from actual codebase. We run /ArchPresent and get an interactive architecture map(.html) which you can open by double-clicking. No server, no build step, no MCP calls, no dependencies.  no one-shot. you can regenerated on changes and see news components with highlight mark.
+ArchPresent is an agent skill that generate diagrams from actual codebase. We run /ArchPresent and get an interactive architecture map(.html) which you can open by double-clicking. No server, no build step, no MCP calls, no dependencies.  NOT one-shot. you can regenerated on changes and see news components with highlight mark.
 
 ![Video](https://github.com/user-attachments/assets/08cd3bdb-8967-4fdb-b7d4-c6fc8f985502)
 

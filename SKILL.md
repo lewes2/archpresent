@@ -100,7 +100,12 @@ node "$SK/scripts/build.mjs" "$WORK" <outHtml>
 A failure exits non-zero and produces nothing half-finished. Build time already catches: a file assigned
 to two rectangles in the same diagram, any repository file left uncovered, a dangling `child` / link
 source port / `RET` port index, `CODE_PICKS` pointing at a symbol that does not exist (it lists the
-candidate names for you), and placeholders it cannot fill.
+candidate names for you), placeholders it cannot fill, and **a diagram detached from the tree** — one
+that nothing points at with `child` and that declares no `parent` fails the build; one that declares a
+`parent` but that no rectangle offers a way into is a warning, because a reader can then only reach it
+by playing a flow. A detached diagram is worth a gate of its own: its breadcrumb collapses to a single
+entry, which kills Back and Top (both test `stack.length > 1`), so a flow diving into it strands the
+reader with no way out.
 
 ### Step 5 · Pass the quality gates (not skippable)
 

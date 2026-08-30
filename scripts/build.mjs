@@ -228,6 +228,24 @@ for (const [path, symbol, span = 24] of CODE_PICKS) {
 const diaIds = new Set(DIAGRAMS.map(d => d.id));
 const blockKeys = new Set();
 for (const d of DIAGRAMS) for (const b of d.blocks) blockKeys.add(d.id + '/' + b.id);
+
+/* Reachability. A diagram nobody points at with `child` and that declares no `parent` is detached
+   from the tree: its breadcrumb collapses to one entry, Back and Top go dead (both test
+   stack.length > 1), and any flow step that dives into it strands the reader with no way out.
+   Declaring `parent` is enough for the breadcrumb; a `child` pointer is what also makes it
+   clickable, so the weaker case is a warning rather than a failure. */
+const pointedAt = new Set();
+for (const d of DIAGRAMS) for (const b of d.blocks) if (b.child) pointedAt.add(b.child);
+for (const d of DIAGRAMS) {
+  if (d.lv === 1 || pointedAt.has(d.id)) continue;
+  if (!d.parent) {
+    console.error(`× ${d.id} is unreachable: no rectangle has child:'${d.id}' and it declares no parent`);
+    process.exitCode = 1;
+  } else {
+    console.error(`⚠ ${d.id} has no way in: it sits under ${d.parent} in the breadcrumb, but no rectangle `
+                + `there has child:'${d.id}', so a reader can only arrive by playing a flow`);
+  }
+}
 for (const d of DIAGRAMS) {
   const ids = new Set(d.blocks.map(b => b.id));
   if (d.parent && !diaIds.has(d.parent)) { console.error(`× ${d.id} parent does not exist: ${d.parent}`); process.exitCode = 1; }
@@ -300,6 +318,15 @@ for (const fl of FLOWS) chunks.push(`flow(${J(fl.name)},${J(fl.from)},${J(fl.rol
 chunks.push('\n/* --------------------------------------------------------- L1 feature list (hand-written) */\nconst FEATURES = [];\nconst feat = (n, cat, key, d) => FEATURES.push({ n, cat, key, d });');
 for (const ft of FEATURES) chunks.push(`feat(${J(ft.n)},${J(ft.cat)},${J(ft.key)},${J(ft.d)});`);
 chunks.push(readFileSync(join(SELF, '..', 'assets', 'engine.js'), 'utf8'));
+
+/* Every check above records its verdict in process.exitCode rather than throwing, so that one run
+   reports ALL the problems instead of only the first. This is where that becomes a refusal: writing
+   the file anyway would print a ✓ next to the × and leave a broken artifact on disk that looks
+   finished — the failure has to cost you the output, or it is only a remark. */
+if (process.exitCode) {
+  console.error('× refusing to write ' + OUT + ' — fix the errors above and build again');
+  process.exit(1);
+}
 
 writeFileSync(OUT, `<!doctype html>
 <html lang="en">

@@ -55,6 +55,9 @@ const sandbox = {
   },
   requestAnimationFrame: () => 0,
   cancelAnimationFrame(){},
+  // The engine strokes its kind glyphs through Path2D; stub it so that branch is actually exercised
+  // rather than silently skipped by the engine's own "no Path2D" guard.
+  Path2D: class { constructor(d){ this.d = d; } },
   setTimeout: (fn) => { try { fn(); } catch {} return 0; },
   clearTimeout(){}, setInterval: () => 0, clearInterval(){},
   performance: { now: () => 0 },

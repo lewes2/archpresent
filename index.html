@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ArchPresent · Pi WebUI (@xianzhon/pi-webui 1.0.3)</title>
+<title>ArchPresent · Map For Pi WebUI </title>
 <style>
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0e1116;}
   #cv{display:block;width:100vw;height:100vh;cursor:default;}
@@ -503,6 +503,65 @@ const KIND = {
   note:  { f:'#1b1e25', s:'#3c424d', t:'#9aa3ad', tag:'Note'    }
 };
 
+/* --------------------------------------------------------------- kind icons
+   Icons: Lucide (https://lucide.dev) — ISC licence, free and open source.
+   Only the outline path data is embedded, one 24x24 glyph per kind, stroked through Path2D. An icon
+   font or an <img> would mean either a network request (the CSP and the single-file rule both forbid
+   it) or a fat base64 blob; a path string costs ~120 bytes, inherits the canvas transform, and takes
+   its colour from the rectangle's own palette for free.
+   Sub-paths are concatenated into one `d` — each still starts with M, so they render as one glyph.
+   A `h.01` segment is Lucide's idiom for a dot: zero length, drawn round by lineCap. */
+const ICON_D = {
+  person: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',                    // user
+  app:    'M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z'                          // server
+        + 'M4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2zM6 6h.01M6 18h.01',
+  extc:   'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM9 9h6v6H9z'              // cpu
+        + 'M15 2v2M9 2v2M15 20v2M9 20v2M20 9h2M20 15h2M2 9h2M2 15h2',
+  ext:    'M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z',                                            // cloud
+  lib:    'm16 6 4 14M12 6v14M8 8v12M4 4v16',                                                               // library
+  // layers. Note every sub-path after the first starts with an UPPERCASE M: concatenated into one
+  // `d`, a lowercase m would be read as relative to the previous sub-path's end, not as Lucide's
+  // own absolute origin — which silently deforms the glyph instead of failing.
+  comp:   'M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9'
+        + 'a1 1 0 0 0 0-1.83z'
+        + 'M22 17.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65'
+        + 'M22 12.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65',
+  code:   'm16 18 6-6-6-6M8 6l-6 6 6 6',                                                                    // code
+  store:  'M21 5a9 3 0 1 1-18 0 9 3 0 0 1 18 0M3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0',                // database
+  risk:   'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3zM12 9v4M12 17h.01',     // triangle-alert
+  note:   'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 16v-4M12 8h.01',                                     // info
+};
+
+/* Path2D is built once per kind and reused for every rectangle of that kind, every frame.
+   Guarded because a headless/stubbed canvas may not provide Path2D — the map then simply loses its
+   icons rather than failing to render. */
+const ICON_CACHE = new Map();
+function iconOf(kind){
+  if (!ICON_CACHE.has(kind)){
+    const d = ICON_D[kind];
+    let p = null;
+    if (d && typeof Path2D !== 'undefined'){ try { p = new Path2D(d); } catch { p = null; } }
+    ICON_CACHE.set(kind, p);
+  }
+  return ICON_CACHE.get(kind);
+}
+
+/** Draw a kind glyph with its top-left at (x, y), scaled to `size` px, in the rectangle's own colour. */
+function drawIcon(kind, x, y, size, colour, alpha){
+  const p = iconOf(kind);
+  if (!p) return false;
+  const k = size / 24;
+  g.save();
+  g.translate(x, y); g.scale(k, k);
+  g.strokeStyle = colour;
+  g.globalAlpha = alpha;
+  g.lineWidth = 2;                       // Lucide's own stroke width, in its 24-unit space
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.stroke(p);
+  g.restore();
+  return true;
+}
+
 const LV_NAME = ['', 'L1 · System Context', 'L2 · Container', 'L3 · Component', 'L4 · Code'];
 
 const cv = document.getElementById('cv');
@@ -594,6 +653,16 @@ Object.keys(D).forEach(id => D[id].blocks.forEach(b => {
   if (b.child && D[b.child] && D[b.child].lv === D[id].lv + 1 && !PARENT[b.child])
     PARENT[b.child] = { dia:id, block:b.id };
 }));
+/* Fallback: a diagram that declares `parent` but that no rectangle points at with `child` still
+   belongs in the tree. Without this its breadcrumb collapses to a single entry and BOTH ways out go
+   dead — Back and Top test stack.length > 1 — so a flow step that dives into it strands the reader
+   there. block:null means "no rectangle to highlight at that level": project() returns null for that
+   level, which is already the "invisible here" contract, and keeps walking for the levels above. */
+Object.keys(D).forEach(id => {
+  const d = D[id];
+  if (!PARENT[id] && d.parent && D[d.parent] && D[d.parent].lv === d.lv - 1)
+    PARENT[id] = { dia:d.parent, block:null };
+});
 function pathOf(id){ const p=[id]; let c=id; while (PARENT[c]){ c=PARENT[c].dia; p.unshift(c); } return p; }
 /* Project a step at any depth onto a given level: walk up to that diagram, return its ancestor rectangle */
 function project(key, diaId){
@@ -1137,10 +1206,12 @@ function drawBlock(b, v){
   g.setLineDash([]);
   g.restore();
 
-  // Top label bar
+  // Top label bar: kind glyph, then the kind tag
+  const ICO = 11;
+  const hasIcon = drawIcon(b.k in ICON_D ? b.k : 'comp', b.x+11, b.y+13-ICO/2, ICO, K.s, .85);
   g.font = '9.5px ' + FONT; g.textBaseline = 'middle'; g.textAlign = 'left';
   g.fillStyle = K.s; g.globalAlpha = .85;
-  g.fillText(K.tag, b.x+12, b.y+13);
+  g.fillText(K.tag, b.x + (hasIcon ? 11+ICO+4 : 12), b.y+13);
   g.globalAlpha = 1;
   if (b.child){
     g.textAlign = 'right'; g.fillStyle = '#8ea0b8';
@@ -1434,7 +1505,7 @@ function drawFlowPanel(){
   // ---- two tabs at the top + a collapse button ----
   g.textBaseline = 'middle'; g.textAlign = 'center';
   const CBW = 26;                                          // collapse button
-  const TABS = [['flow', ' User Story '], ['feat',FEATURES.length+' Features ']];
+  const TABS = [['flow', 'User Journeys'], ['feat',FEATURES.length+' Features ']];
   const tw = (w - 28 - CBW - 6) / 2;
   TABS.forEach(([id, label], i) => {
     const tx = x + 14 + i*tw, ty = y + 8, on = tab === id;
